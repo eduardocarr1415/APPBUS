@@ -1,0 +1,25 @@
+SISTEMA DE GESTIÓN DE COMPAÑÍA DE BUSES
+======================================
+
+ESTE ZIP CONTIENE EL PROGRAMA EN PYTHON + SQLITE, no solo imágenes.
+
+1) Extraiga TODO el ZIP en una carpeta de Windows.
+2) Instale Python 3.11 o superior (marque Add Python to PATH).
+3) Haga doble clic en INICIAR_WINDOWS.bat.
+4) El primer inicio mostrará una clave aleatoria del usuario admin. Cópiela.
+5) Cuando pregunte por datos FICTICIOS de demostración, escriba S para cargarlos.
+   Se mostrarán también contraseñas aleatorias para probar otros roles.
+6) Visite http://127.0.0.1:8000 en su navegador.
+7) Ingrese con admin y su contraseña generada.
+
+Si necesita ampliar o cambiar permisos: Usuarios y permisos > Permisos.
+Si desea ver el cierre anual: Reportes > Cierre anual.
+Las pantallas están divididas en pestañas internas, por ejemplo:
+Actas / Reuniones / Convocatorias / Asistencia.
+
+El sistema utiliza la base SQLite en instance/buses.sqlite3.
+La carpeta vistas_previas contiene 7 capturas del programa en ejecución.
+Para reglas faltantes y seguridad de producción, consulte README.md.
+
+Importante: no publicar directamente en Internet; este es un prototipo
+funcional local que aún debe validarse con las reglas de la compañía.
