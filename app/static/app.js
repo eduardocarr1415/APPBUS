@@ -8,10 +8,13 @@ document.addEventListener('DOMContentLoaded',()=>{
   const target=document.getElementById(btn.dataset.copyTarget);
   if(target&&navigator.clipboard?.writeText){navigator.clipboard.writeText(target.textContent).then(()=>{btn.textContent='Copiado';});}
  });
- document.querySelectorAll('form').forEach(form=>form.addEventListener('submit',e=>{
-  const btn=e.submitter;
-  if(btn?.dataset.confirm&&!window.confirm(btn.dataset.confirm))e.preventDefault();
- }));
+ document.querySelectorAll('form').forEach(form=>{
+  form.addEventListener('invalid',()=>form.classList.add('validation-attempted'),true);
+  form.addEventListener('submit',e=>{
+   const btn=e.submitter;
+   if(btn?.dataset.confirm&&!window.confirm(btn.dataset.confirm))e.preventDefault();
+  });
+ });
 
  // Control de Asistencia en Actas y Reuniones
  const meetingSelect = document.getElementById('asistencia-meeting-select');

@@ -3,7 +3,18 @@
 {% if error %}<div class="notice danger">⚠ {{ error }}</div>{% endif %}
 {% if form.kind=='traspasos' %}<div class="notice info">Este traspaso cambia el propietario de la unidad y deja constancia de la venta del bus con sus acciones y derechos. El nuevo socio no puede tener otra unidad activa.</div>{% endif %}
 <section class="panel form-panel"><form action="{% if editing %}/editar/{{ form.kind }}/{{ record_id }}{% else %}/nuevo/{{ form.kind }}{% endif %}" method="post"><input type="hidden" name="_csrf" value="{{ csrf }}"><div class="form-grid">{% for f in form.fields %}
-<div class="field {% if f.type=='textarea' %}full{% endif %}"><label for="fld-{{ f.name }}">{{ f.label }}{% if f.required %} <span class="required">*</span>{% endif %}</label>{% if f.type=='select' %}<select id="fld-{{ f.name }}" name="{{ f.name }}" {% if f.required %}required{% endif %}>{% for opt in f.options %}<option value="{{ opt[0] }}" {% if (values.get(f.name,'')|string)==opt[0] %}selected{% endif %}>{{ opt[1] }}</option>{% endfor %}</select>{% elif f.type=='textarea' %}<textarea name="{{ f.name }}" id="fld-{{ f.name }}" rows="5" maxlength="5000" {% if f.required %}required{% endif %}>{{ values.get(f.name,'') }}</textarea>{% else %}<input id="fld-{{ f.name }}" name="{{ f.name }}" type="{{ 'text' if f.type=='money' else f.type }}" value="{% if f.type != 'password' %}{{ values.get(f.name,'') }}{% endif %}" {% if f.type=='money' %}inputmode="decimal" placeholder="0.00"{% endif %} {% if f.type=='password' %}autocomplete="new-password" minlength="12"{% endif %} {% if f.required %}required{% endif %} maxlength="200">{% endif %}</div>
+{% set field_error=errors.get(f.name) %}
+<div class="field {% if f.type=='textarea' %}full{% endif %}{% if field_error %} has-error{% endif %}">
+<label for="fld-{{ f.name }}">{{ f.label }}{% if f.required %} <span class="required">*</span>{% endif %}</label>
+{% if f.type=='select' %}
+<select id="fld-{{ f.name }}" name="{{ f.name }}" {% if f.required %}required{% endif %} {% if field_error %}aria-invalid="true" aria-describedby="error-{{ f.name }}"{% endif %}>{% for opt in f.options %}<option value="{{ opt[0] }}" {% if (values.get(f.name,'')|string)==opt[0] %}selected{% endif %}>{{ opt[1] }}</option>{% endfor %}</select>
+{% elif f.type=='textarea' %}
+<textarea name="{{ f.name }}" id="fld-{{ f.name }}" rows="5" maxlength="{{ f.maxlength }}" {% if f.required %}required{% endif %} {% if field_error %}aria-invalid="true" aria-describedby="error-{{ f.name }}"{% endif %}>{{ values.get(f.name,'') }}</textarea>
+{% else %}
+<input id="fld-{{ f.name }}" name="{{ f.name }}" type="{% if f.type in ['money','person_name','cedula','username'] %}text{% elif f.type=='phone' %}tel{% else %}{{ f.type }}{% endif %}" value="{% if f.type != 'password' %}{{ values.get(f.name,'') }}{% endif %}" maxlength="{{ f.maxlength }}" {% if f.pattern %}pattern="{{ f.pattern }}" title="{{ f.validation_message }}"{% endif %} {% if f.inputmode %}inputmode="{{ f.inputmode }}"{% endif %} {% if f.type=='money' %}inputmode="decimal" placeholder="0.00"{% endif %} {% if f.type=='password' %}autocomplete="new-password" minlength="{{ f.minlength }}"{% endif %} {% if f.required %}required{% endif %} {% if field_error %}aria-invalid="true" aria-describedby="error-{{ f.name }}"{% endif %}>
+{% endif %}
+{% if field_error %}<small class="field-error" id="error-{{ f.name }}" role="alert">{{ field_error }}</small>{% endif %}
+</div>
 {% endfor %}</div><div class="form-actions"><a class="btn secondary" href="{{ cancel }}">Cancelar</a><button class="btn primary" type="submit">✓ Guardar registro</button></div></form></section>
 {% if form.kind=='actas' %}<p class="muted hint">Para adjuntar el PDF, abra el detalle de la reunión después de guardar el acta.</p>{% endif %}
 {% endblock %}
