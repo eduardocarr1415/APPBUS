@@ -21,3 +21,9 @@
 .asistencia-check{width:19px;height:19px;accent-color:#0764e0;cursor:pointer;vertical-align:middle}
 .asistencia-check:disabled{cursor:not-allowed;opacity:.6}
 .placeholder-icon{font-size:44px;color:#0b63e2;margin-bottom:10px;opacity:.85}
+
+/* Convocatorias */
+.convocatoria-textarea{width:100%;background:#fcfdff;border:1px solid #bdcee7;border-radius:8px;min-height:115px;padding:11px 12px;color:#19325a;outline:none;font-family:inherit;font-size:13px;line-height:1.55;resize:vertical}
+.convocatoria-textarea:focus{border-color:#0067e9;box-shadow:0 0 0 3px #dcecff}
+.convocatoria-check{width:19px;height:19px;accent-color:#0764e0;cursor:pointer;vertical-align:middle}
+.convocatoria-check:disabled{cursor:not-allowed;opacity:.6}

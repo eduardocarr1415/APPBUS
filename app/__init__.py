@@ -235,6 +235,9 @@ def create_app(db_path=None, testing=False):
 
     @app.get('/nuevo/{kind}')
     def new_form(request:Request,kind:str):
+        if kind=='convocatorias':
+            mid=request.query_params.get('meeting_id','')
+            return redir('/actas?tab=convocatorias'+(f'&meeting_id={mid}' if mid else ''))
         permitted(request,PERM_CREATE.get(kind,'__no__'))
         s=spec(db,kind)
         initial={'joined':date.today().isoformat(),'meeting_date':date.today().isoformat(),'day':date.today().isoformat(),
@@ -435,8 +438,13 @@ def create_app(db_path=None, testing=False):
         attendance=db.all('SELECT s.name,a.status,a.socio_id FROM attendance a JOIN meetings m ON m.id=a.meeting_id JOIN socios s ON s.id=a.socio_id WHERE m.id=? ORDER BY s.name',(meeting_id,))
         if current(request)['role']=='Socio':
             attendance=[r for r in attendance if r['socio_id']==current(request)['socio_id']]
+        notif_counts = db.one('''
+            SELECT COUNT(*) AS total,
+                   COALESCE(SUM(CASE WHEN notified=1 THEN 1 ELSE 0 END), 0) AS notificados
+            FROM meeting_notifications WHERE meeting_id=?
+        ''', (meeting_id,))
         return render(request,'meeting.html',active='actas',m=m,docs=docs,attendance=attendance,
-                      can_manage=has(request,'actas.editar'))
+                      can_manage=has(request,'actas.editar'),notif_counts=notif_counts)
 
     @app.post('/reunion/{meeting_id}/realizada')
     async def complete_meeting(request:Request,meeting_id:int):
@@ -519,6 +527,52 @@ def create_app(db_path=None, testing=False):
 
         return redir(f'/actas?tab=asistencia&meeting_id={meeting_id}', 'Asistencia guardada correctamente.')
 
+    @app.post('/actas/convocatoria')
+    async def save_convocatoria_batch(request: Request):
+        permitted(request, 'actas.editar')
+        f = await csrf_check(request)
+        try:
+            meeting_id = int(str(f.get('meeting_id', '')).strip())
+        except ValueError:
+            raise HTTPException(400, 'Reunión no válida.')
+        meeting = db.one('SELECT * FROM meetings WHERE id=?', (meeting_id,))
+        if not meeting:
+            raise HTTPException(404, 'Reunión no encontrada.')
+
+        notice = str(f.get('notice', '')).strip()
+        all_socio_ids = [int(x) for x in f.getlist('all_socio_ids') if str(x).isdigit()]
+        if not all_socio_ids:
+            db_socios = db.all('''
+                SELECT s.id FROM socios s
+                LEFT JOIN meeting_notifications mn ON mn.socio_id=s.id AND mn.meeting_id=?
+                WHERE s.active=1 OR mn.meeting_id IS NOT NULL
+            ''', (meeting_id,))
+            all_socio_ids = [s['id'] for s in db_socios]
+
+        notified_ids = {int(x) for x in f.getlist('notified_ids') if str(x).isdigit()}
+
+        with db.connection() as con:
+            con.execute("UPDATE meetings SET notice=?, notice_sent_at=COALESCE(notice_sent_at, CURRENT_TIMESTAMP) WHERE id=?",
+                        (notice, meeting_id))
+            now_iso = nowstr()
+            for sid in all_socio_ids:
+                is_notif = 1 if sid in notified_ids else 0
+                notif_time = now_iso if is_notif else None
+                con.execute('''
+                    INSERT INTO meeting_notifications(meeting_id, socio_id, notified, notified_at)
+                    VALUES(?, ?, ?, ?)
+                    ON CONFLICT(meeting_id, socio_id) DO UPDATE SET
+                      notified = excluded.notified,
+                      notified_at = excluded.notified_at
+                ''', (meeting_id, sid, is_notif, notif_time))
+            Database.audit(con, current(request)['id'], 'Actualizar', 'convocatorias', meeting_id,
+                           f'Convocatoria reunión {meeting_id}: {len(notified_ids)} notificados de {len(all_socio_ids)}')
+
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or 'application/json' in request.headers.get('accept', ''):
+            return JSONResponse({'ok': True, 'message': 'Convocatoria y notificaciones guardadas correctamente.', 'meeting_id': meeting_id})
+
+        return redir(f'/actas?tab=convocatorias&meeting_id={meeting_id}', 'Convocatoria y notificaciones guardadas correctamente.')
+
     @app.get('/{module_name}')
     def module_page(request:Request,module_name:str,tab:str=''):
         # Keep this generic module route last among GET routes to avoid collisions.
@@ -580,6 +634,67 @@ def create_app(db_path=None, testing=False):
                 selected_meeting=selected_meeting,
                 socios_attendance=socios_attendance,
                 summary=summary
+            )
+
+        if module_name=='actas' and tab=='convocatorias':
+            meetings = db.all('SELECT id, type, topic, meeting_date, meeting_time, location, agenda, status, notice, notice_sent_at FROM meetings ORDER BY meeting_date DESC, id DESC')
+            selected_meeting_id = None
+            raw_mid = request.query_params.get('meeting_id')
+            if raw_mid and raw_mid.isdigit():
+                mid_int = int(raw_mid)
+                if any(m['id'] == mid_int for m in meetings):
+                    selected_meeting_id = mid_int
+            selected_meeting = db.one('SELECT * FROM meetings WHERE id=?', (selected_meeting_id,)) if selected_meeting_id else None
+
+            socios_notif = []
+            summary_notif = None
+            default_notice = ''
+            if selected_meeting:
+                m_socios = db.all('''
+                    SELECT s.id, s.name, COALESCE(s.phone, '') AS phone, COALESCE(s.email, '') AS email,
+                           (SELECT GROUP_CONCAT(u.code, ', ') FROM units u WHERE u.socio_id=s.id) AS unit_code,
+                           mn.notified, mn.notified_at
+                    FROM socios s
+                    LEFT JOIN meeting_notifications mn ON mn.socio_id = s.id AND mn.meeting_id = ?
+                    WHERE s.active = 1 OR mn.meeting_id IS NOT NULL
+                    ORDER BY s.name ASC
+                ''', (selected_meeting_id,))
+                for s in m_socios:
+                    if s['notified'] is not None:
+                        is_n = bool(s['notified'])
+                    else:
+                        is_n = bool(selected_meeting['notice_sent_at'])
+                    socios_notif.append({
+                        'id': s['id'],
+                        'name': s['name'],
+                        'phone': s['phone'] or '—',
+                        'email': s['email'] or '—',
+                        'unit_code': s['unit_code'] or '—',
+                        'notified': is_n,
+                        'notified_at': s['notified_at']
+                    })
+                tot = len(socios_notif)
+                notifs = sum(1 for s in socios_notif if s['notified'])
+                summary_notif = {
+                    'total': tot,
+                    'notificados': notifs,
+                    'pendientes': tot - notifs
+                }
+                if not selected_meeting['notice']:
+                    default_notice = (
+                        f"Se convoca a los señores socios a la reunión de {selected_meeting['type']} "
+                        f"que se llevará a cabo el día {selected_meeting['meeting_date']} a las {selected_meeting['meeting_time']} "
+                        f"en {selected_meeting['location']}.\n\n"
+                        f"Orden del día:\n{selected_meeting['agenda'] or '1. Constatación del quórum.\n2. Tratamiento del orden del día.'}"
+                    )
+
+            extra.update(
+                can_manage_convocatoria=has(request, 'actas.editar'),
+                meetings=meetings,
+                selected_meeting=selected_meeting,
+                socios_notif=socios_notif,
+                summary_notif=summary_notif,
+                default_notice=default_notice
             )
 
         return render(request,'module.html',active=module_name,mod=module_name,tab=tab,

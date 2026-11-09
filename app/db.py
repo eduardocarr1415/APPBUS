@@ -73,6 +73,11 @@ CREATE TABLE IF NOT EXISTS attendance (
  status TEXT NOT NULL CHECK(status IN ('Asistió','Faltó','Justificó')),
  PRIMARY KEY(meeting_id,socio_id)
 );
+CREATE TABLE IF NOT EXISTS meeting_notifications (
+ meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE, socio_id INTEGER NOT NULL REFERENCES socios(id),
+ notified INTEGER NOT NULL DEFAULT 0 CHECK(notified IN (0,1)), notified_at TEXT,
+ PRIMARY KEY(meeting_id,socio_id)
+);
 CREATE TABLE IF NOT EXISTS docs (id INTEGER PRIMARY KEY, meeting_id INTEGER REFERENCES meetings(id),
  filename TEXT NOT NULL, safe_path TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, uploaded_by INTEGER REFERENCES users(id),
  uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
