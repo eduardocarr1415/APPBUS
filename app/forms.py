@@ -1,7 +1,8 @@
 """Form definitions and controlled write operations. Monetary values use cents."""
 import sqlite3
 from datetime import date
-from .security import safe_text, valid_date, money, valid_username, valid_email, password_valid, password_hash
+from .security import (safe_text, valid_date, money, valid_username, valid_email,
+                       valid_person_name, valid_cedula, valid_phone, password_valid, password_hash)
 from .db import Database
 
 PERM_CREATE = {
@@ -11,8 +12,46 @@ PERM_CREATE = {
  'multas':'multas.editar','vigilancia':'vigilancia.editar','usuarios':'usuarios.editar'
 }
 
+class FormValidationError(ValueError):
+    def __init__(self, field_name, message):
+        super().__init__(message)
+        self.field_name=field_name
+
+def field_errors_for(exc):
+    if isinstance(exc,FormValidationError):
+        return {exc.field_name:str(exc)}
+    if isinstance(exc,sqlite3.IntegrityError):
+        constraint_fields={
+            'socios.cedula':'cedula',
+            'socios.email':'email',
+            'users.username':'username',
+            'users.email':'email',
+            'vehicles.plate':'plate',
+            'units.code':'code',
+        }
+        message=str(exc)
+        for constraint,field_name in constraint_fields.items():
+            if constraint in message:
+                return {field_name:'Este valor ya está registrado.'}
+    return {}
+
 def field(name, title, type='text', required=True, options=None, placeholder=None):
-    return dict(name=name,label=title,type=type,required=required,options=options or [],placeholder=placeholder or '')
+    constraints={
+        'person_name':(120,r"[\p{L}\p{M}]+(?:[ '’\-][\p{L}\p{M}]+)*",None,None,
+                       'Use solo letras, espacios, apóstrofes o guiones.'),
+        'cedula':(10,r'[0-9]{1,10}','numeric',None,'Ingrese solo números, hasta 10 dígitos.'),
+        'phone':(10,r'[0-9]{10}','numeric',None,'Ingrese exactamente 10 números.'),
+        'email':(254,None,None,None,'Ingrese un correo válido.'),
+        'password':(128,None,None,12,'La contraseña debe tener entre 12 y 128 caracteres.'),
+        'textarea':(5000,None,None,None,None),
+        'username':(32,r'[\p{L}\p{N}_.\-]{3,32}',None,3,
+                    'Use de 3 a 32 letras, números, puntos o guiones.'),
+    }
+    maxlength,pattern,inputmode,minlength,message=constraints.get(
+        type,(180,None,None,None,None))
+    return dict(name=name,label=title,type=type,required=required,options=options or [],
+                placeholder=placeholder or '',maxlength=maxlength,pattern=pattern,
+                inputmode=inputmode,minlength=minlength,validation_message=message)
 
 def options(db, sql):
     return [(str(a),str(b)) for a,b in [list(x.values())[:2] for x in db.all(sql)]]
@@ -30,7 +69,7 @@ def spec(db,kind):
     debts=options(db,"SELECT d.id,s.name || ' · ' || d.concept || ' (pendiente)' FROM debts d JOIN socios s ON s.id=d.socio_id WHERE d.amount_cents>d.paid_cents ORDER BY d.id DESC")
     roles=options(db,'SELECT id,name FROM roles ORDER BY id')
     S={
-     'socios':('Registrar socio',[field('name','Nombres y apellidos'),field('cedula','Cédula',required=False),field('phone','Teléfono',required=False),field('email','Correo electrónico','email',False),field('joined','Fecha de ingreso','date'),field('notes','Observaciones','textarea',False)]),
+     'socios':('Registrar socio',[field('name','Nombres y apellidos','person_name'),field('cedula','Cédula','cedula'),field('phone','Celular','phone'),field('email','Correo electrónico','email'),field('joined','Fecha de ingreso','date'),field('notes','Observaciones','textarea',False)]),
      'traspasos':('Registrar traspaso de unidad',[field('unit_id','Unidad que se traspasa','select',options=transfer_units),field('new_socio_id','Nuevo socio propietario','select',options=socios),field('transferred_at','Fecha del traspaso','date'),field('document_reference','Referencia del documento de compraventa',required=False),field('notes','Observaciones','textarea',False)]),
      'vehiculos':('Registrar vehículo',[field('plate','Placa'),field('brand','Marca',required=False),field('model','Modelo',required=False),field('year','Año','number',False),field('status','Estado','select',options=[('Activo','Activo'),('Mantenimiento','Mantenimiento'),('Inactivo','Inactivo')])]),
      'unidades':('Registrar unidad',[field('code','Código de unidad'),field('socio_id','Socio responsable','select',False,[('', 'Sin asignar')]+socios),field('vehicle_id','Vehículo','select',False,[('', 'Sin vehículo')]+vehiculos),field('status','Estado','select',options=[('Activa','Activa'),('Mantenimiento','Mantenimiento'),('Inactiva','Inactiva')])]),
@@ -45,7 +84,7 @@ def spec(db,kind):
      'marcaciones':('Marcación semanal',[field('socio_id','Socio','select',options=socios),field('week_start','Fecha de semana','date'),field('concept','Concepto de marcación'),field('amount','Importe (S/)','money',False),field('state','Estado','select',options=[('Marcado','Marcado'),('Pendiente','Pendiente')])]),
      'multas':('Registrar multa',[field('socio_id','Socio o conductor','select',options=socios),field('unit_id','Unidad','select',False,[('','Sin asignar')]+unidades),field('category','Categoría','select',options=[('Atraso','Atraso'),('Minutos','Minutos'),('Radio','Radio'),('Trabajo','Trabajo'),('Otros','Otros')]),field('reason','Motivo de la multa'),field('occurred_at','Fecha','date'),field('amount','Monto (S/)','money')]),
      'vigilancia':('Nuevo control de vigilancia',[field('day','Fecha','date'),field('socio_id','Socio','select',False,[('','Sin asignar')]+socios),field('unit_id','Unidad','select',False,[('','Sin unidad')]+unidades),field('category','Categoría','select',options=[('Control de trabajo','Control de trabajo'),('Atraso','Atraso'),('Radio','Radio'),('Ingreso','Ingreso'),('Otros','Otros')]),field('details','Descripción','textarea')]),
-     'usuarios':('Registrar usuario',[field('full_name','Nombre completo'),field('username','Usuario'),field('email','Correo','email',False),field('role_id','Rol','select',options=roles),field('socio_id','Socio vinculado','select',False,[('','No vinculado')]+socios),field('password','Contraseña (mínimo 12 caracteres)','password')]),
+     'usuarios':('Registrar usuario',[field('full_name','Nombre completo','person_name'),field('username','Usuario','username'),field('email','Correo','email',False),field('role_id','Rol','select',options=roles),field('socio_id','Socio vinculado','select',False,[('','No vinculado')]+socios),field('password','Contraseña (mínimo 12 caracteres)','password')]),
     }
     if kind not in S: raise ValueError('Tipo de registro desconocido.')
     return {'kind':kind,'title':S[kind][0],'fields':S[kind][1]}
@@ -56,22 +95,31 @@ def save(db, kind, data, uid, existing_id=None):
     v={}
     for f in s['fields']:
         n=f['name']; t=f['type']; val=str(data.get(n,'')).strip()
-        if f['required'] and not val: raise ValueError(f'{f["label"]}: el campo es obligatorio.')
-        if t=='select':
-            accepted={o[0] for o in f['options']}
-            if val not in accepted: raise ValueError(f'{f["label"]}: opción no válida.')
-            v[n]=val
-        elif t=='date': v[n]=valid_date(val).isoformat() if val else None
-        elif t=='time':
-            import datetime
-            try: v[n]=datetime.time.fromisoformat(val).strftime('%H:%M')
-            except ValueError: raise ValueError(f'{f["label"]}: hora inválida.')
-        elif t=='money': v[n]=money(val or '0')
-        elif t=='number':
-            if val and (not val.isdigit() or not 1900<=int(val)<=2150): raise ValueError('Año fuera de rango.')
-            v[n]=int(val) if val else None
-        elif t=='textarea': v[n]=safe_text(val,f['label'],5000,f['required'])
-        else: v[n]=safe_text(val,f['label'],180,f['required'])
+        try:
+            if f['required'] and not val: raise ValueError(f'{f["label"]}: el campo es obligatorio.')
+            if t=='select':
+                accepted={o[0] for o in f['options']}
+                if val not in accepted: raise ValueError(f'{f["label"]}: opción no válida.')
+                v[n]=val
+            elif t=='person_name': v[n]=valid_person_name(val,f['label'],f['maxlength'],f['required'])
+            elif t=='cedula': v[n]=valid_cedula(val)
+            elif t=='phone': v[n]=valid_phone(val)
+            elif t=='email': v[n]=valid_email(val)
+            elif t=='date': v[n]=valid_date(val).isoformat() if val else None
+            elif t=='time':
+                import datetime
+                try: v[n]=datetime.time.fromisoformat(val).strftime('%H:%M')
+                except ValueError: raise ValueError(f'{f["label"]}: hora inválida.')
+            elif t=='money': v[n]=money(val or '0')
+            elif t=='number':
+                if val and (not val.isdigit() or not 1900<=int(val)<=2150): raise ValueError('Año fuera de rango.')
+                v[n]=int(val) if val else None
+            elif t=='textarea': v[n]=safe_text(val,f['label'],f['maxlength'],f['required'])
+            else: v[n]=safe_text(val,f['label'],f['maxlength'],f['required'])
+        except ValueError as exc:
+            if isinstance(exc,FormValidationError):
+                raise
+            raise FormValidationError(n,str(exc)) from exc
     def nullable(name):return int(v[name]) if v.get(name) else None
     with db.connection() as con:
         period=Database.ensure_period(con,date.today())
@@ -184,7 +232,6 @@ def save(db, kind, data, uid, existing_id=None):
             rid=con.execute('INSERT INTO vigilance(period_id,socio_id,unit_id,category,details,day,created_by) VALUES(?,?,?,?,?,?,?)',(period['id'],nullable('socio_id'),nullable('unit_id'),v['category'],v['details'],v['day'],uid)).lastrowid
         elif kind=='usuarios':
             v['username']=valid_username(v['username'])
-            v['email']=valid_email(v['email'])
             if not password_valid(v['password']): raise ValueError('La contraseña debe tener entre 12 y 128 caracteres.')
             if v['role_id']==str(con.execute("SELECT id FROM roles WHERE name='Socio'").fetchone()['id']) and not v['socio_id']:
                 raise ValueError('Los usuarios con rol Socio deben estar vinculados a un socio.')

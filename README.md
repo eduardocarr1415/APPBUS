@@ -36,7 +36,7 @@ Si PowerShell bloquea activar entornos virtuales, puede ejecutar `\.venv\Scripts
 - **Reportes:** informes generales, económicos, de deudas, multas, asistencia, unidades y vigilancia en PDF y CSV, con historial de periodos.
 - **Usuarios y permisos:** Usuarios / Roles / Permisos / Auditoría.
 
-Los formularios de alta y edición están en pantallas separadas. Los cobros originales se guardan como operaciones inmutables: este prototipo no permite editar movimientos históricos para evitar cambios de saldos sin rastro.
+Los formularios de alta y edición están en pantallas separadas. Los campos se validan en el navegador y nuevamente en el servidor: en socios, nombre, cédula, celular y correo son obligatorios; el nombre solo admite letras y separadores habituales, la cédula solo números hasta 10 dígitos, el celular exactamente 10 y el correo debe tener formato válido. Los errores señalan el campo que debe corregirse. Las demás entradas también tienen límites y validaciones según su tipo. Los cobros originales se guardan como operaciones inmutables: este prototipo no permite editar movimientos históricos para evitar cambios de saldos sin rastro.
 
 ## Cuentas y permisos
 
