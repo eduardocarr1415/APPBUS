@@ -74,8 +74,7 @@ def modules(db, key, tab, role_name='', socio_id=None):
             settable('Reuniones programadas',['ID','Fecha','Hora','Tipo','Tema','Estado'],'''SELECT id,meeting_date,meeting_time,type,topic,status FROM meetings ORDER BY meeting_date DESC''')
             R.update(new_kind='reuniones',new_label='Nueva reunión')
         elif tab=='convocatorias':
-            settable('Convocatorias',['ID','Fecha','Reunión','Convocatoria','Publicación'],'''SELECT id,meeting_date,topic,CASE WHEN notice<>'' THEN 'Preparada' ELSE 'Pendiente' END,CASE WHEN notice_sent_at IS NOT NULL THEN 'Publicada' ELSE 'Por publicar' END FROM meetings ORDER BY meeting_date DESC''')
-            R.update(new_kind='convocatorias',new_label='Crear convocatoria')
+            R.update(section='Convocatorias a reuniones',new_kind=None)
         else:
             R.update(section='Control de asistencia',new_kind=None)
     elif key=='finanzas':

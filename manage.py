@@ -131,8 +131,20 @@ def backup():
     src.close();dst.close()
     print('Copia de seguridad:',target)
 
+def reset_admin():
+    DB.init()
+    admin = DB.one("SELECT id FROM users WHERE username='admin'")
+    if not admin:
+        print("El usuario admin no existe.")
+        return
+    password = 'Admin12345678!'
+    with DB.connection() as con:
+        con.execute("UPDATE users SET password_hash=?, session_version=session_version+1 WHERE username='admin'", (password_hash(password),))
+        con.execute("DELETE FROM sessions WHERE user_id=?", (admin['id'],))
+    print(f"\nContraseña de 'admin' restablecida a: {password}\n")
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description='Administrar el sistema de buses')
-    parser.add_argument('command',choices=['init','demo','backup'])
+    parser.add_argument('command',choices=['init','demo','backup','reset-admin'])
     args=parser.parse_args()
-    {'init':init,'demo':demo,'backup':backup}[args.command]()
+    {'init':init,'demo':demo,'backup':backup,'reset-admin':reset_admin}[args.command]()

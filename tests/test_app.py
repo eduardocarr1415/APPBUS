@@ -341,3 +341,95 @@ def test_asistencia_permissions_guard(environment):
         'asistio_ids': [str(sid)]
     })
     assert forbidden_resp.status_code == 403
+
+def test_convocatoria_view_and_selection(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    today = date.today().isoformat()
+    with db.connection() as con:
+        mid = con.execute('INSERT INTO meetings(type,topic,meeting_date,meeting_time,location,agenda) VALUES(?,?,?,?,?,?)',
+                          ('Asamblea General', 'Convocatoria de prueba', today, '10:00', 'Auditorio', '1. Quorum\n2. Balance')).lastrowid
+    login(c, 'admin')
+
+    # 1. /actas?tab=convocatorias displays selector
+    resp = c.get('/actas?tab=convocatorias')
+    assert resp.status_code == 200
+    assert 'Convocatorias a reuniones' in resp.text
+    assert 'Seleccionar reunión' in resp.text
+    assert 'Convocatoria de prueba' in resp.text
+
+    # 2. Selecting meeting displays notice textarea and socios table
+    resp_mid = c.get(f'/actas?tab=convocatorias&meeting_id={mid}')
+    assert resp_mid.status_code == 200
+    assert 'Texto de la convocatoria' in resp_mid.text
+    assert 'Nombre del socio' in resp_mid.text
+    assert 'Notificado' in resp_mid.text
+    assert 'Socio Uno' in resp_mid.text
+    assert 'Socio Dos' in resp_mid.text
+    assert 'Guardar convocatoria y notificaciones' in resp_mid.text
+
+
+def test_convocatoria_save_and_notifications(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    today = date.today().isoformat()
+    with db.connection() as con:
+        mid = con.execute('INSERT INTO meetings(type,topic,meeting_date,meeting_time,location) VALUES(?,?,?,?,?)',
+                          ('Consejo de Administración', 'Aprobación presupuestaria', today, '16:00', 'Sala')).lastrowid
+    login(c, 'admin')
+
+    token = csrf(c, f'/actas?tab=convocatorias&meeting_id={mid}')
+    notice_text = 'Estimados socios, se convoca a reunión extraordinaria.'
+    # sid is notified, other is NOT notified
+    resp = c.post('/actas/convocatoria', data={
+        '_csrf': token,
+        'meeting_id': str(mid),
+        'notice': notice_text,
+        'all_socio_ids': [str(sid), str(other)],
+        'notified_ids': [str(sid)]
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+    assert 'Convocatoria y notificaciones guardadas correctamente' in resp.text
+
+    # Verify meeting updated in SQLite
+    m = db.one('SELECT notice, notice_sent_at FROM meetings WHERE id=?', (mid,))
+    assert m['notice'] == notice_text
+    assert m['notice_sent_at'] is not None
+
+    # Verify meeting_notifications in SQLite
+    notifs = db.all('SELECT socio_id, notified FROM meeting_notifications WHERE meeting_id=?', (mid,))
+    assert len(notifs) == 2
+    by_sid = {r['socio_id']: r['notified'] for r in notifs}
+    assert by_sid[sid] == 1
+    assert by_sid[other] == 0
+
+    # Reloading shows sid checked as Notificado and other as No notificado
+    page = c.get(f'/actas?tab=convocatorias&meeting_id={mid}')
+    assert f'value="{sid}" data-badge="badge-notif-{sid}" class="convocatoria-check" aria-label="Notificado Socio Uno" checked' in page.text
+    assert f'value="{other}" data-badge="badge-notif-{other}" class="convocatoria-check" aria-label="Notificado Socio Dos" checked' not in page.text
+
+
+def test_convocatoria_permissions_guard(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    today = date.today().isoformat()
+    with db.connection() as con:
+        mid = con.execute('INSERT INTO meetings(type,topic,meeting_date,meeting_time,location) VALUES(?,?,?,?,?)',
+                          ('Asamblea General', 'Reunión General', today, '09:00', 'Local')).lastrowid
+
+    # Socio can view, but cannot modify
+    login(c, 'socio')
+    resp = c.get(f'/actas?tab=convocatorias&meeting_id={mid}')
+    assert resp.status_code == 200
+    assert 'disabled' in resp.text
+    assert 'readonly' in resp.text
+    assert 'Guardar convocatoria y notificaciones' not in resp.text
+
+    # Socio cannot POST to save convocatoria
+    token = csrf(c, '/perfil')
+    forbidden = c.post('/actas/convocatoria', data={
+        '_csrf': token,
+        'meeting_id': str(mid),
+        'notice': 'Intento no autorizado',
+        'all_socio_ids': [str(sid)],
+        'notified_ids': [str(sid)]
+    })
+    assert forbidden.status_code == 403
+
