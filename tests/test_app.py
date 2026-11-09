@@ -176,6 +176,52 @@ def test_change_vehicle_generates_income(environment):
     assert income=={'amount_cents':2500,'category':'Cambio de vehículo','method':'Transferencia'}
 
 
+def test_unit_ownership_transfer_updates_owner_and_keeps_rights_history(environment):
+    app,db,c,sid,other,*_=environment
+    with db.connection() as con:
+        unit=con.execute('INSERT INTO units(code,socio_id) VALUES(?,?)',('U-TRASPASO',sid)).lastrowid
+    login(c)
+    history_page=c.get('/socios?tab=traspasos')
+    assert history_page.status_code==200 and 'Registrar traspaso' in history_page.text
+    response=post(c,'/nuevo/traspasos',{
+        'unit_id':str(unit),'new_socio_id':str(other),'transferred_at':date.today().isoformat(),
+        'document_reference':'Contrato 2026-07','notes':'Venta acordada'
+    })
+    assert response.status_code==303
+    assert db.one('SELECT socio_id FROM units WHERE id=?',(unit,))['socio_id']==other
+    assert db.one('SELECT active FROM socios WHERE id=?',(sid,))['active']==0
+    transfer=db.one('SELECT * FROM ownership_transfers WHERE unit_id=?',(unit,))
+    assert transfer['from_socio_id']==sid and transfer['to_socio_id']==other
+    assert transfer['includes_shares']==1 and transfer['includes_rights']==1
+    assert transfer['document_reference']=='Contrato 2026-07'
+    assert db.one("SELECT COUNT(*) n FROM audit WHERE entity='traspasos' AND record_id=?",(transfer['id'],))['n']==1
+    history=c.get('/socios?tab=traspasos')
+    assert 'Socio Uno' in history.text and 'Socio Dos' in history.text
+    assert 'Bus, acciones y derechos' in history.text
+
+
+def test_active_unit_rule_and_owner_change_require_transfer(environment):
+    app,db,c,sid,other,*_=environment
+    with db.connection() as con:
+        unit=con.execute('INSERT INTO units(code,socio_id) VALUES(?,?)',('U-ACTIVA',sid)).lastrowid
+        con.execute('INSERT INTO units(code,socio_id) VALUES(?,?)',('U-OTRA',other))
+    login(c)
+    duplicate=post(c,'/nuevo/unidades',{'code':'U-DUPLICADA','socio_id':str(sid),'vehicle_id':'','status':'Activa'})
+    assert duplicate.status_code==400 and 'ya tiene otra unidad activa' in duplicate.text
+    edit=post(c,f'/editar/unidades/{unit}',{
+        'code':'U-ACTIVA','socio_id':str(other),'vehicle_id':'','status':'Activa'
+    })
+    assert edit.status_code==400 and 'registre un traspaso' in edit.text
+    transfer=post(c,'/nuevo/traspasos',{
+        'unit_id':str(unit),'new_socio_id':str(other),'transferred_at':date.today().isoformat(),
+        'document_reference':'','notes':''
+    })
+    assert transfer.status_code==400 and 'ya tiene una unidad activa' in transfer.text
+    assert db.one('SELECT socio_id FROM units WHERE id=?',(unit,))['socio_id']==sid
+    assert db.one('SELECT active FROM socios WHERE id=?',(sid,))['active']==1
+    assert db.one('SELECT COUNT(*) n FROM ownership_transfers')['n']==0
+
+
 def test_user_role_change_revokes_existing_sessions(environment):
     app,db,c,sid,other,aid,vid,sid_user=environment
     with TestClient(app) as second:
@@ -295,7 +341,6 @@ def test_asistencia_permissions_guard(environment):
         'asistio_ids': [str(sid)]
     })
     assert forbidden_resp.status_code == 403
-
 
 def test_convocatoria_view_and_selection(environment):
     app, db, c, sid, other, aid, vid, sid_user = environment

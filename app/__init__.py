@@ -66,7 +66,7 @@ def create_app(db_path=None, testing=False):
         return RedirectResponse(url+(sep+quote(msg) if msg else ''),status_code=303)
 
     def parent(kind):
-        return {'socios':'/socios','vehiculos':'/unidades?tab=vehiculos','unidades':'/unidades','cambios':'/unidades?tab=cambios',
+        return {'socios':'/socios','traspasos':'/socios?tab=traspasos','vehiculos':'/unidades?tab=vehiculos','unidades':'/unidades','cambios':'/unidades?tab=cambios',
                 'reuniones':'/actas?tab=reuniones','actas':'/actas?tab=actas','convocatorias':'/actas?tab=convocatorias',
                 'asistencia':'/actas?tab=asistencia','ingresos':'/finanzas?tab=ingresos','pagos':'/finanzas?tab=pagos',
                 'deudas':'/finanzas?tab=deudas','marcaciones':'/finanzas?tab=marcaciones','multas':'/multas',
@@ -242,7 +242,7 @@ def create_app(db_path=None, testing=False):
         s=spec(db,kind)
         initial={'joined':date.today().isoformat(),'meeting_date':date.today().isoformat(),'day':date.today().isoformat(),
                  'issued':date.today().isoformat(),'occurred_at':date.today().isoformat(),'week_start':date.today().isoformat(),
-                 'changed_at':date.today().isoformat()}
+                 'changed_at':date.today().isoformat(),'transferred_at':date.today().isoformat()}
         return render(request,'form.html',active='',form=s,values=initial,error=None,cancel=parent(kind),editing=False)
 
     @app.post('/nuevo/{kind}')
@@ -255,7 +255,8 @@ def create_app(db_path=None, testing=False):
         except (ValueError,sqlite3.IntegrityError) as exc:
             msg='No se pudo guardar: ya existe un registro igual o faltan datos válidos.' if isinstance(exc,sqlite3.IntegrityError) else str(exc)
             return render(request,'form.html',status_code=400,active='',form=spec(db,kind),values=values,error=msg,cancel=parent(kind),editing=False)
-        return redir(parent(kind),'Registro guardado correctamente.')
+        message='Traspaso registrado; propietario e historial actualizados.' if kind=='traspasos' else 'Registro guardado correctamente.'
+        return redir(parent(kind),message)
 
     EDITABLE={'socios':('socios','socios.crear'), 'vehiculos':('vehicles','unidades.editar'),
               'unidades':('units','unidades.editar'), 'reuniones':('meetings','actas.editar')}

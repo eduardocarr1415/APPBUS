@@ -56,6 +56,29 @@ CREATE TABLE IF NOT EXISTS units (
  socio_id INTEGER REFERENCES socios(id), vehicle_id INTEGER REFERENCES vehicles(id),
  status TEXT NOT NULL DEFAULT 'Activa', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TRIGGER IF NOT EXISTS units_single_active_socio_insert
+BEFORE INSERT ON units
+WHEN NEW.socio_id IS NOT NULL AND NEW.status='Activa'
+ AND EXISTS (SELECT 1 FROM units WHERE socio_id=NEW.socio_id AND status='Activa')
+BEGIN
+ SELECT RAISE(ABORT,'El socio ya tiene una unidad activa.');
+END;
+CREATE TRIGGER IF NOT EXISTS units_single_active_socio_update
+BEFORE UPDATE OF socio_id,status ON units
+WHEN NEW.socio_id IS NOT NULL AND NEW.status='Activa'
+ AND EXISTS (SELECT 1 FROM units WHERE socio_id=NEW.socio_id AND status='Activa' AND id<>NEW.id)
+BEGIN
+ SELECT RAISE(ABORT,'El socio ya tiene una unidad activa.');
+END;
+CREATE TABLE IF NOT EXISTS ownership_transfers (
+ id INTEGER PRIMARY KEY, unit_id INTEGER NOT NULL REFERENCES units(id),
+ from_socio_id INTEGER NOT NULL REFERENCES socios(id), to_socio_id INTEGER NOT NULL REFERENCES socios(id),
+ transferred_at TEXT NOT NULL, includes_shares INTEGER NOT NULL DEFAULT 1 CHECK(includes_shares IN (0,1)),
+ includes_rights INTEGER NOT NULL DEFAULT 1 CHECK(includes_rights IN (0,1)),
+ document_reference TEXT DEFAULT '', notes TEXT DEFAULT '',
+ created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ CHECK(from_socio_id<>to_socio_id)
+);
 CREATE TABLE IF NOT EXISTS vehicle_changes (
  id INTEGER PRIMARY KEY, unit_id INTEGER NOT NULL REFERENCES units(id),
  old_vehicle_id INTEGER REFERENCES vehicles(id), new_vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
