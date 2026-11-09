@@ -14,7 +14,7 @@ NAV = [
  ('usuarios','/usuarios','♙','Usuarios y permisos','usuarios.ver'),
 ]
 TABS={
- 'socios':[('listado','Socios'),('unidades','Unidades asignadas')],
+ 'socios':[('listado','Socios'),('unidades','Unidades asignadas'),('traspasos','Historial de traspasos')],
  'actas':[('actas','Actas'),('reuniones','Reuniones'),('convocatorias','Convocatorias'),('asistencia','Asistencia')],
  'finanzas':[('resumen','Resumen'),('ingresos','Ingresos'),('pagos','Pagos'),('deudas','Deudas'),('marcaciones','Marcación semanal'),('historial','Historial')],
  'multas':[('multas','Multas'),('pendientes','Pendientes'),('pagadas','Pagadas')],
@@ -53,6 +53,15 @@ def modules(db, key, tab, role_name='', socio_id=None):
         R['cards']=[card('Socios activos',db.one('SELECT COUNT(*) n FROM socios WHERE active=1')['n'],'♙'),card('Unidades registradas',db.one('SELECT COUNT(*) n FROM units')['n'],'▣')]
         if tab=='unidades':
             settable('Unidades de los socios',['Unidad','Socio','Placa','Estado'],'''SELECT u.code,COALESCE(s.name,'Sin asignar'),COALESCE(v.plate,'Sin vehículo'),u.status FROM units u LEFT JOIN socios s ON s.id=u.socio_id LEFT JOIN vehicles v ON v.id=u.vehicle_id'''+(' WHERE u.socio_id=?' if own else '')+' ORDER BY u.code',(socio_id,) if own else ())
+        elif tab=='traspasos':
+            settable('Historial de traspasos',['ID','Fecha','Unidad','Placa','Socio vendedor','Nuevo socio','Transferencia'],'''SELECT t.id,t.transferred_at,u.code,COALESCE(v.plate,'Sin vehículo'),seller.name AS seller_name,buyer.name AS buyer_name,
+                CASE WHEN t.includes_shares=1 AND t.includes_rights=1 THEN 'Bus, acciones y derechos' ELSE 'Bus' END
+                FROM ownership_transfers t JOIN units u ON u.id=t.unit_id
+                LEFT JOIN vehicles v ON v.id=u.vehicle_id
+                JOIN socios seller ON seller.id=t.from_socio_id
+                JOIN socios buyer ON buyer.id=t.to_socio_id'''+(' WHERE t.from_socio_id=? OR t.to_socio_id=?' if own else '')+' ORDER BY t.transferred_at DESC,t.id DESC',(socio_id,socio_id) if own else ())
+            R.update(new_kind='traspasos',new_label='Registrar traspaso',
+                     side_rows=[('Regla','Una sola unidad activa por socio'),('Registro','Cada cambio conserva vendedor, comprador y fecha'),('Alcance','El traspaso incluye bus, acciones y derechos')])
         else:
             settable('Socios registrados',['ID','Socio','Cédula','Teléfono','Estado'],'''SELECT id,name,COALESCE(cedula,''),COALESCE(phone,''),CASE WHEN active=1 THEN 'Activo' ELSE 'Inactivo' END FROM socios ORDER BY name''')
             R.update(new_kind='socios',new_label='Registrar socio')

@@ -27,7 +27,7 @@ Si PowerShell bloquea activar entornos virtuales, puede ejecutar `\.venv\Scripts
 ## Módulos y pestañas
 
 - **Inicio:** indicadores, deudas por socio, reuniones próximas y actividad.
-- **Socios:** registro de socios y asignación de unidades.
+- **Socios:** registro de socios, asignación de unidades y traspasos de buses con acciones y derechos. El historial conserva cada propietario anterior y nuevo; cada socio puede tener una sola unidad activa.
 - **Actas y reuniones:** Actas / Reuniones / Convocatorias / Asistencia; redacción y archivos PDF o imágenes adjuntas.
 - **Ingresos económicos:** Resumen / Ingresos / Pagos / Deudas / Marcación semanal / Historial.
 - **Multas:** Multas / Pendientes / Pagadas. Una nueva multa crea una deuda vinculada. Al pagar esa deuda, la multa queda pagada.

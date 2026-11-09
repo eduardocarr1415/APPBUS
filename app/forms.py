@@ -5,7 +5,7 @@ from .security import safe_text, valid_date, money, valid_username, valid_email,
 from .db import Database
 
 PERM_CREATE = {
- 'socios':'socios.crear','vehiculos':'unidades.editar','unidades':'unidades.editar','cambios':'unidades.editar',
+ 'socios':'socios.crear','traspasos':'socios.crear','vehiculos':'unidades.editar','unidades':'unidades.editar','cambios':'unidades.editar',
  'reuniones':'actas.editar','actas':'actas.editar','convocatorias':'actas.editar','asistencia':'actas.editar',
  'ingresos':'finanzas.editar','deudas':'finanzas.editar','pagos':'finanzas.editar','marcaciones':'finanzas.editar',
  'multas':'multas.editar','vigilancia':'vigilancia.editar','usuarios':'usuarios.editar'
@@ -21,11 +21,17 @@ def spec(db,kind):
     socios=options(db,"SELECT id,name FROM socios WHERE active=1 ORDER BY name")
     vehiculos=options(db,"SELECT id,plate FROM vehicles ORDER BY plate")
     unidades=options(db,"SELECT id,code FROM units ORDER BY code")
+    transfer_units=options(db,"""SELECT u.id,u.code || ' · ' || s.name ||
+        CASE WHEN v.plate IS NOT NULL THEN ' · ' || v.plate ELSE '' END
+        FROM units u JOIN socios s ON s.id=u.socio_id
+        LEFT JOIN vehicles v ON v.id=u.vehicle_id
+        WHERE u.status='Activa' ORDER BY u.code""")
     meetings=options(db,"SELECT id,meeting_date || ' · ' || topic FROM meetings ORDER BY meeting_date DESC")
     debts=options(db,"SELECT d.id,s.name || ' · ' || d.concept || ' (pendiente)' FROM debts d JOIN socios s ON s.id=d.socio_id WHERE d.amount_cents>d.paid_cents ORDER BY d.id DESC")
     roles=options(db,'SELECT id,name FROM roles ORDER BY id')
     S={
      'socios':('Registrar socio',[field('name','Nombres y apellidos'),field('cedula','Cédula',required=False),field('phone','Teléfono',required=False),field('email','Correo electrónico','email',False),field('joined','Fecha de ingreso','date'),field('notes','Observaciones','textarea',False)]),
+     'traspasos':('Registrar traspaso de unidad',[field('unit_id','Unidad que se traspasa','select',options=transfer_units),field('new_socio_id','Nuevo socio propietario','select',options=socios),field('transferred_at','Fecha del traspaso','date'),field('document_reference','Referencia del documento de compraventa',required=False),field('notes','Observaciones','textarea',False)]),
      'vehiculos':('Registrar vehículo',[field('plate','Placa'),field('brand','Marca',required=False),field('model','Modelo',required=False),field('year','Año','number',False),field('status','Estado','select',options=[('Activo','Activo'),('Mantenimiento','Mantenimiento'),('Inactivo','Inactivo')])]),
      'unidades':('Registrar unidad',[field('code','Código de unidad'),field('socio_id','Socio responsable','select',False,[('', 'Sin asignar')]+socios),field('vehicle_id','Vehículo','select',False,[('', 'Sin vehículo')]+vehiculos),field('status','Estado','select',options=[('Activa','Activa'),('Mantenimiento','Mantenimiento'),('Inactiva','Inactiva')])]),
      'cambios':('Registrar cambio de vehículo',[field('unit_id','Unidad','select',options=unidades),field('new_vehicle_id','Nuevo vehículo','select',options=vehiculos),field('reason','Motivo del cambio'),field('amount','Valor del cambio (S/)','money',False),field('changed_at','Fecha de cambio','date'),field('method','Forma de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
@@ -69,7 +75,7 @@ def save(db, kind, data, uid, existing_id=None):
     def nullable(name):return int(v[name]) if v.get(name) else None
     with db.connection() as con:
         period=Database.ensure_period(con,date.today())
-        if kind not in ('socios','vehiculos','unidades','reuniones','actas','convocatorias','asistencia','usuarios') and period['closed_at']:
+        if kind not in ('socios','traspasos','vehiculos','unidades','reuniones','actas','convocatorias','asistencia','usuarios') and period['closed_at']:
             raise ValueError('No se puede registrar: el periodo está cerrado.')
         financial_date={'cambios':'changed_at','ingresos':'day','deudas':'issued','pagos':'day',
                         'marcaciones':'week_start','multas':'occurred_at','vigilancia':'day'}.get(kind)
@@ -89,9 +95,44 @@ def save(db, kind, data, uid, existing_id=None):
                 rid=con.execute('INSERT INTO vehicles(plate,brand,model,year,status) VALUES(?,?,?,?,?)',(v['plate'].upper(),v['brand'],v['model'],v['year'],v['status'])).lastrowid
         elif kind=='unidades':
             if existing_id:
+                previous=con.execute('SELECT socio_id FROM units WHERE id=?',(existing_id,)).fetchone()
+                if previous and previous['socio_id'] is not None and previous['socio_id']!=nullable('socio_id'):
+                    raise ValueError('Para cambiar al propietario de una unidad, registre un traspaso desde Socios > Traspasos.')
+                if v['status']=='Activa' and nullable('socio_id') is not None and con.execute(
+                    "SELECT 1 FROM units WHERE socio_id=? AND status='Activa' AND id<>?",
+                    (nullable('socio_id'),existing_id)).fetchone():
+                    raise ValueError('El socio ya tiene otra unidad activa.')
                 con.execute('UPDATE units SET code=?,socio_id=?,vehicle_id=?,status=? WHERE id=?',(v['code'],nullable('socio_id'),nullable('vehicle_id'),v['status'],existing_id));rid=existing_id
             else:
+                if v['status']=='Activa' and nullable('socio_id') is not None and con.execute(
+                    "SELECT 1 FROM units WHERE socio_id=? AND status='Activa'",
+                    (nullable('socio_id'),)).fetchone():
+                    raise ValueError('El socio ya tiene otra unidad activa.')
                 rid=con.execute('INSERT INTO units(code,socio_id,vehicle_id,status) VALUES(?,?,?,?)',(v['code'],nullable('socio_id'),nullable('vehicle_id'),v['status'])).lastrowid
+        elif kind=='traspasos':
+            unit=con.execute("""SELECT u.id,u.code,u.socio_id,u.status,s.name AS seller
+                FROM units u JOIN socios s ON s.id=u.socio_id WHERE u.id=?""",(int(v['unit_id']),)).fetchone()
+            buyer=con.execute('SELECT id,name FROM socios WHERE id=? AND active=1',(int(v['new_socio_id']),)).fetchone()
+            if not unit or unit['status']!='Activa':
+                raise ValueError('La unidad seleccionada ya no está disponible para traspaso.')
+            if not buyer:
+                raise ValueError('El nuevo socio debe estar activo.')
+            if unit['socio_id']==buyer['id']:
+                raise ValueError('El nuevo propietario debe ser distinto del propietario actual.')
+            if con.execute("SELECT 1 FROM units WHERE socio_id=? AND status='Activa' AND id<>?",
+                           (buyer['id'],unit['id'])).fetchone():
+                raise ValueError('El nuevo socio ya tiene una unidad activa.')
+            rid=con.execute("""INSERT INTO ownership_transfers
+                (unit_id,from_socio_id,to_socio_id,transferred_at,includes_shares,includes_rights,
+                 document_reference,notes,created_by)
+                VALUES(?,?,?,?,1,1,?,?,?)""",
+                (unit['id'],unit['socio_id'],buyer['id'],v['transferred_at'],
+                 v['document_reference'],v['notes'],uid)).lastrowid
+            con.execute('UPDATE units SET socio_id=? WHERE id=?',(buyer['id'],unit['id']))
+            con.execute('UPDATE socios SET active=0 WHERE id=?',(unit['socio_id'],))
+            Database.audit(con,uid,'Traspasar','traspasos',rid,
+                           f"Unidad {unit['code']}: {unit['seller']} → {buyer['name']} (bus, acciones y derechos)")
+            return rid
         elif kind=='cambios':
             prev=con.execute('SELECT vehicle_id FROM units WHERE id=?',(v['unit_id'],)).fetchone()
             if not prev: raise ValueError('La unidad indicada no existe.')
