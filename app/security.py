@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import re
 import secrets
+import unicodedata
 from datetime import datetime, timedelta, timezone, date
 from decimal import Decimal, InvalidOperation
 from html import escape
@@ -70,6 +71,40 @@ def safe_text(value, label='Campo', maxlen=250, required=True):
     if any(ord(ch)<32 and ch not in '\n\t' for ch in s): raise ValueError(f'{label}: contiene caracteres no válidos.')
     return s
 
+def valid_person_name(value, label='Nombre', maxlen=120, required=True):
+    s=safe_text(value,label,maxlen,required)
+    if not s: return s
+    separators={" ", "'", "’", "-"}
+    for index,char in enumerate(s):
+        category=unicodedata.category(char)
+        if category.startswith('L'):
+            continue
+        if category.startswith('M'):
+            if index and unicodedata.category(s[index-1]).startswith(('L','M')):
+                continue
+        if char in separators:
+            if (not index or index==len(s)-1 or s[index-1] in separators
+                    or s[index+1] in separators):
+                raise ValueError(f'{label}: use solo letras, espacios, apóstrofes o guiones.')
+            continue
+        raise ValueError(f'{label}: use solo letras, espacios, apóstrofes o guiones.')
+    if (unicodedata.category(s[0]).startswith('L')
+            and unicodedata.category(s[-1]).startswith(('L','M'))):
+        return s
+    raise ValueError(f'{label}: use solo letras, espacios, apóstrofes o guiones.')
+
+def valid_cedula(value):
+    s=str(value or '').strip()
+    if s and not re.fullmatch(r'[0-9]{1,10}',s):
+        raise ValueError('Cédula: ingrese solo números, hasta 10 dígitos.')
+    return s
+
+def valid_phone(value):
+    s=str(value or '').strip()
+    if s and not re.fullmatch(r'[0-9]{10}',s):
+        raise ValueError('Celular: ingrese exactamente 10 números.')
+    return s
+
 def valid_username(s):
     s=(s or '').strip()
     if not re.fullmatch(r'[\w.\-]{3,32}',s,re.UNICODE): raise ValueError('El usuario debe tener 3 a 32 letras, números, guiones o puntos.')
@@ -77,8 +112,19 @@ def valid_username(s):
 
 def valid_email(s):
     s=(s or '').strip().lower()
-    if s and (len(s)>180 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',s)):
-        raise ValueError('El correo no tiene un formato válido.')
+    if s:
+        if len(s)>254 or s.count('@')!=1:
+            raise ValueError('El correo no tiene un formato válido.')
+        local,domain=s.rsplit('@',1)
+        labels=domain.split('.')
+        if (len(local)>64 or not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+",local)
+                or local.startswith('.') or local.endswith('.') or '..' in local
+                or len(labels)<2 or any(
+                    not label or len(label)>63 or label.startswith('-') or label.endswith('-')
+                    or not re.fullmatch(r'[A-Za-z0-9-]+',label) for label in labels
+                )
+                or not re.fullmatch(r'[A-Za-z]{2,63}|xn--[A-Za-z0-9-]{2,59}',labels[-1])):
+            raise ValueError('El correo no tiene un formato válido.')
     return s
 
 def locked(con, username, ip):

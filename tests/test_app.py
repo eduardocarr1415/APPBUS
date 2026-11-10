@@ -132,11 +132,68 @@ def test_escaping_and_password_strength(environment):
     login(c)
     values={'name':'<script>alert(1)</script>','cedula':'','phone':'','email':'','joined':date.today().isoformat(),'notes':'x'}
     res=post(c,'/nuevo/socios',values)
-    assert res.status_code==303
-    response=c.get('/socios')
-    assert '&lt;script&gt;' in response.text and '<script>alert' not in response.text
+    assert res.status_code==400
+    assert '&lt;script&gt;' in res.text and '<script>alert' not in res.text
     short=post(c,'/nuevo/usuarios',{'full_name':'Usuario Prueba','username':'otro','email':'','role_id':'1','socio_id':'','password':'pass'})
     assert short.status_code==400
+
+
+def test_socio_fields_are_validated_on_server_and_browser(environment):
+    app,db,c,sid,*_=environment
+    login(c)
+    page=c.get('/nuevo/socios')
+    assert 'maxlength="10" pattern="[0-9]{1,10}"' in page.text
+    assert 'maxlength="10" pattern="[0-9]{10}"' in page.text
+    assert 'type="email"' in page.text
+    for field_name in ('cedula','phone','email'):
+        assert re.search(rf'id="fld-{field_name}"[^>]*required',page.text)
+
+    valid={'name':'María O’Neil','cedula':'12345678','phone':'0987654321',
+           'email':'PERSONA@example.com','joined':date.today().isoformat(),'notes':''}
+    for missing in ('name','cedula','phone','email','joined'):
+        incomplete={key:value for key,value in valid.items() if key!=missing}
+        response=post(c,'/nuevo/socios',incomplete)
+        assert response.status_code==400
+        assert f'aria-invalid="true" aria-describedby="error-{missing}"' in response.text
+        assert db.one("SELECT COUNT(*) AS n FROM socios")['n']==2
+
+    response=post(c,'/nuevo/socios',valid)
+    assert response.status_code==303
+    saved=db.one('SELECT name,cedula,phone,email FROM socios WHERE cedula=?',('12345678',))
+    assert saved=={'name':'María O’Neil','cedula':'12345678','phone':'0987654321',
+                   'email':'persona@example.com'}
+
+    invalid_cases=[
+        ('cedula','12345678901','hasta 10'),
+        ('cedula','1234A','solo números'),
+        ('phone','123456789','10 números'),
+        ('phone','123456789a','10 números'),
+        ('name','Juan3','solo letras'),
+        ('name','Ana María!','solo letras'),
+        ('email','persona@invalido','correo'),
+    ]
+    for key,value,message in invalid_cases:
+        values={**valid,key:value}
+        response=post(c,'/nuevo/socios',values)
+        assert response.status_code==400
+        assert message in response.text
+        assert f'aria-invalid="true" aria-describedby="error-{key}"' in response.text
+
+    duplicate=post(c,'/nuevo/socios',{**valid,'name':'Otra Persona'})
+    assert duplicate.status_code==400
+    assert 'aria-invalid="true" aria-describedby="error-cedula"' in duplicate.text
+    assert db.one("SELECT COUNT(*) AS n FROM socios")['n']==3
+
+
+def test_user_full_name_and_email_are_validated(environment):
+    app,db,c,*_=environment
+    login(c)
+    common={'username':'usuario1','email':'no-es-correo','role_id':'1',
+            'socio_id':'','password':'SecurePass123456'}
+    invalid_name=post(c,'/nuevo/usuarios',{**common,'full_name':'Usuario 123'})
+    assert invalid_name.status_code==400 and 'solo letras' in invalid_name.text
+    invalid_email=post(c,'/nuevo/usuarios',{**common,'full_name':'Usuario Prueba','email':'mal-correo'})
+    assert invalid_email.status_code==400 and 'correo' in invalid_email.text
 
 
 def test_upload_document_magic_header_and_access(environment):
@@ -378,6 +435,16 @@ def test_convocatoria_save_and_notifications(environment):
 
     token = csrf(c, f'/actas?tab=convocatorias&meeting_id={mid}')
     notice_text = 'Estimados socios, se convoca a reunión extraordinaria.'
+    oversized = c.post('/actas/convocatoria', data={
+        '_csrf': token,
+        'meeting_id': str(mid),
+        'notice': 'x' * 5001,
+        'all_socio_ids': [str(sid), str(other)],
+        'notified_ids': [str(sid)]
+    })
+    assert oversized.status_code == 400
+    assert db.one('SELECT notice FROM meetings WHERE id=?', (mid,))['notice'] == ''
+
     # sid is notified, other is NOT notified
     resp = c.post('/actas/convocatoria', data={
         '_csrf': token,
@@ -434,6 +501,7 @@ def test_convocatoria_permissions_guard(environment):
     assert forbidden.status_code == 403
 
 
+
 def test_auditoria_module_only_admin(environment):
     app, db, c, sid, other, aid, vid, sid_user = environment
 
@@ -448,11 +516,13 @@ def test_auditoria_module_only_admin(environment):
     assert socio_resp.status_code == 403
 
     # 3. Vigilancia cannot access /auditoria (Forbidden 403)
+    assert post(c, '/logout').status_code == 303
     login(c, 'vigilante')
     vig_resp = c.get('/auditoria')
     assert vig_resp.status_code == 403
 
     # 4. Administrador can access /auditoria and all its tabs
+    assert post(c, '/logout').status_code == 303
     login(c, 'admin')
     admin_resp = c.get('/auditoria')
     assert admin_resp.status_code == 200
@@ -492,7 +562,7 @@ def test_audit_logs_logins_and_system_events(environment):
     assert login_audit['ip_address'] is not None
 
     # 3. Operation is recorded with summary and IP
-    r = post(c, '/nuevo/socios', {'name': 'Socio Auditoria', 'cedula': '1700000000', 'phone': '0999999999', 'email': '', 'joined': date.today().isoformat(), 'notes': 'Test'})
+    r = post(c, '/nuevo/socios', {'name': 'Socio Auditoria', 'cedula': '1700000000', 'phone': '0999999999', 'email': 'auditoria@example.com', 'joined': date.today().isoformat(), 'notes': 'Test'})
     assert r.status_code == 303
     socio_audit = db.one("SELECT * FROM audit WHERE entity='socios' ORDER BY id DESC LIMIT 1")
     assert socio_audit is not None
@@ -505,5 +575,3 @@ def test_audit_logs_logins_and_system_events(environment):
     assert 'IP del dispositivo' in audit_page.text
     assert 'Inicio de sesión' in audit_page.text
     assert 'Intento fallido' in audit_page.text
-
-

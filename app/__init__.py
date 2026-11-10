@@ -17,7 +17,7 @@ from .db import Database, PERMISSIONS
 from .security import (password_hash,password_ok,password_valid,utcnow,nowstr,token_hash,make_session,
                        locked,register_failure,reset_failures,safe_text,valid_email,valid_username)
 from .views import NAV,TABS,TITLES,SUBTITLES,modules
-from .forms import PERM_CREATE, spec, save
+from .forms import PERM_CREATE, spec, save, field_errors_for
 from .reports import fmt, build_rows, as_csv, as_pdf, REPORT_TYPES
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -159,11 +159,21 @@ def create_app(db_path=None, testing=False):
         f=await csrf_check(request)
         username=str(f.get('username','')).strip().lower()
         pwd=str(f.get('password',''))
+        try:
+            username=valid_username(username)
+            username_is_valid=True
+        except ValueError:
+            username_is_valid=False
+            username=username[:32]
         ip=client_ip(request)
         with db.connection() as con:
             if locked(con,username,ip):
                 Database.audit(con,None,'Bloqueo temporal','autenticacion',None,f"Acceso temporalmente bloqueado para '{username}' desde IP {ip} por 15 minutos", ip=ip)
                 return render(request,'login.html',status_code=429,error='Demasiados intentos. Inténtelo nuevamente en 15 minutos.')
+            if not username_is_valid or len(pwd)>128:
+                register_failure(con,username,ip)
+                Database.audit(con,None,'Intento fallido','autenticacion',None,f"Intento de acceso fallido con usuario inválido '{username}' desde IP {ip}", ip=ip)
+                return render(request,'login.html',status_code=401,error='Usuario o contraseña incorrectos.')
             u=con.execute('SELECT * FROM users WHERE username=?',(username,)).fetchone()
             if not u or not u['active'] or not password_ok(pwd,u['password_hash']):
                 register_failure(con,username,ip)
@@ -316,7 +326,7 @@ def create_app(db_path=None, testing=False):
                  'issued':date.today().isoformat(),'occurred_at':date.today().isoformat(),'week_start':date.today().isoformat(),
                  'changed_at':date.today().isoformat(),'transferred_at':date.today().isoformat()}
         socios_l, units_l = get_socio_unit_data()
-        return render(request,'form.html',active='',form=s,values=initial,error=None,cancel=parent(kind),editing=False,
+        return render(request,'form.html',active='',form=s,values=initial,error=None,errors={},cancel=parent(kind),editing=False,
                       socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
 
     @app.post('/nuevo/{kind}')
@@ -329,7 +339,8 @@ def create_app(db_path=None, testing=False):
         except (ValueError,sqlite3.IntegrityError) as exc:
             msg='No se pudo guardar: ya existe un registro igual o faltan datos válidos.' if isinstance(exc,sqlite3.IntegrityError) else str(exc)
             socios_l, units_l = get_socio_unit_data()
-            return render(request,'form.html',status_code=400,active='',form=spec(db,kind),values=values,error=msg,cancel=parent(kind),editing=False,
+            return render(request,'form.html',status_code=400,active='',form=spec(db,kind),values=values,
+                          error=msg,errors=field_errors_for(exc),cancel=parent(kind),editing=False,
                           socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
         message='Traspaso registrado; propietario e historial actualizados.' if kind=='traspasos' else 'Registro guardado correctamente.'
         return redir(parent(kind),message)
@@ -348,7 +359,7 @@ def create_app(db_path=None, testing=False):
         item=db.one(f'SELECT * FROM {table} WHERE id=?',(record_id,))
         if not item:raise HTTPException(404,'Registro no encontrado.')
         socios_l, units_l = get_socio_unit_data()
-        return render(request,'form.html',active='',form=spec(db,kind),values={f:str(item[column] or '') for f,column in EDIT_KEYS[kind].items()},error=None,cancel=parent(kind),editing=True,record_id=record_id,
+        return render(request,'form.html',active='',form=spec(db,kind),values={f:str(item[column] or '') for f,column in EDIT_KEYS[kind].items()},error=None,errors={},cancel=parent(kind),editing=True,record_id=record_id,
                       socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
 
     @app.post('/editar/{kind}/{record_id}')
@@ -358,8 +369,10 @@ def create_app(db_path=None, testing=False):
         v={k:str(val) for k,val in f.items() if k!='_csrf'}
         try:save(db,kind,v,current(request)['id'],record_id,ip=client_ip(request))
         except (ValueError,sqlite3.IntegrityError) as exc:
+            msg='No se pudo guardar: ya existe un registro igual o faltan datos válidos.' if isinstance(exc,sqlite3.IntegrityError) else str(exc)
             socios_l, units_l = get_socio_unit_data()
-            return render(request,'form.html',active='',form=spec(db,kind),values=v,error=str(exc),cancel=parent(kind),editing=True,record_id=record_id,status_code=400,
+            return render(request,'form.html',active='',form=spec(db,kind),values=v,error=msg,
+                          errors=field_errors_for(exc),cancel=parent(kind),editing=True,record_id=record_id,status_code=400,
                           socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
         return redir(parent(kind),'Cambios guardados.')
 
@@ -628,7 +641,10 @@ def create_app(db_path=None, testing=False):
         if not meeting:
             raise HTTPException(404, 'Reunión no encontrada.')
 
-        notice = str(f.get('notice', '')).strip()
+        try:
+            notice = safe_text(f.get('notice', ''),'Texto de la convocatoria',5000)
+        except ValueError as exc:
+            raise HTTPException(400,str(exc)) from exc
         all_socio_ids = [int(x) for x in f.getlist('all_socio_ids') if str(x).isdigit()]
         if not all_socio_ids:
             db_socios = db.all('''

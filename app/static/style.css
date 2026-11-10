@@ -1445,6 +1445,10 @@ td:nth-child(1) {
     opacity: .85
 }
 
+.field-error{display:block;color:#b42336;font-size:12px;font-weight:600;margin-top:6px}
+.field.has-error input,.field.has-error select,.field.has-error textarea,
+.validation-attempted input:invalid,.validation-attempted select:invalid,.validation-attempted textarea:invalid{border-color:#d92d43;background:#fff8f8;box-shadow:0 0 0 2px #d92d431c}
+
 /* Convocatorias */
 .convocatoria-textarea {
     width: 100%;
