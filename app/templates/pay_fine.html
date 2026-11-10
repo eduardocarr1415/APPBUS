@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block title %}Pagar multa #{{ fine.id }}{% endblock %}
+{% block content %}
+<div class="heading-row">
+  <div>
+    <a class="back-link" href="/multas?tab=pendientes">← Volver a multas</a>
+    <h1>Cobrar y pagar multa #{{ fine.id }}</h1>
+    <p>Confirme los datos del cobro para cancelar la multa pendiente.</p>
+  </div>
+</div>
+
+<div class="content-columns">
+  <section class="panel form-panel">
+    <div class="panel-heading">
+      <h2>Datos de la multa</h2>
+    </div>
+    
+    <div class="detail-row"><b>Socio sancionado:</b> <span>{{ fine.socio_name }}</span></div>
+    {% if fine.socio_cedula %}<div class="detail-row"><b>Cédula:</b> <span>{{ fine.socio_cedula }}</span></div>{% endif %}
+    <div class="detail-row"><b>Unidad:</b> <span>{{ fine.unit_code or 'Sin unidad' }}</span></div>
+    <div class="detail-row"><b>Categoría:</b> <span>{{ fine.category }}</span></div>
+    <div class="detail-row"><b>Motivo de la multa:</b> <span>{{ fine.reason }}</span></div>
+    <div class="detail-row"><b>Fecha de la infracción:</b> <span>{{ fine.occurred_at }}</span></div>
+    <div class="detail-row" style="font-size:1.15em;background:#f0fdf4;padding:12px 16px;border-radius:8px;margin-top:14px;margin-bottom:18px;border:1px solid #bbf7d0;">
+      <b>Total pendiente a cobrar:</b> <strong style="color:#16a34a;font-size:1.25em;">S/ {{ amount_fmt }}</strong>
+    </div>
+
+    <form action="/multas/{{ fine.id }}/pagar" method="post" class="form-stack">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      
+      <div class="field">
+        <label for="fld-method">Método de pago <span class="required">*</span></label>
+        <select id="fld-method" name="method" required>
+          <option value="Efectivo" selected>Efectivo</option>
+          <option value="Transferencia">Transferencia</option>
+          <option value="Depósito">Depósito</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="fld-day">Fecha de cobro <span class="required">*</span></label>
+        <input type="date" id="fld-day" name="day" value="{{ today }}" required>
+      </div>
+
+      <div class="field">
+        <label for="fld-notes">Observación o N° de comprobante (opcional)</label>
+        <input type="text" id="fld-notes" name="notes" placeholder="Ej: Cobrado en ventanilla / Transferencia #12345" maxlength="150">
+      </div>
+
+      <div class="form-actions" style="margin-top:20px;display:flex;gap:12px;">
+        <a class="btn secondary" href="/multas?tab=pendientes">Cancelar</a>
+        <button class="btn primary" type="submit" style="background:#16a34a;border-color:#15803d;">✓ Confirmar y registrar pago</button>
+      </div>
+    </form>
+  </section>
+
+  <aside class="panel">
+    <h2>Información del cobro</h2>
+    <p>Al confirmar el cobro:</p>
+    <ul style="padding-left:18px;margin-bottom:14px;font-size:0.95em;line-height:1.6;">
+      <li>La multa pasa automáticamente a estado <b style="color:#16a34a;">Pagada</b>.</li>
+      <li>Se registra el ingreso en el historial de <b>Pagos</b> de la compañía.</li>
+      <li>La deuda asociada queda saldada al 100%.</li>
+      <li>Se audita la operación con fecha, hora e IP del usuario.</li>
+    </ul>
+    <div class="notice success">
+      ✓ La multa aparecerá en la pestaña de <b>Pagadas</b> sin saldos pendientes.
+    </div>
+  </aside>
+</div>
+{% endblock %}
+

@@ -150,4 +150,297 @@ document.addEventListener('DOMContentLoaded',()=>{
  document.querySelectorAll('.convocatoria-check').forEach(function(cb) {
   cb.addEventListener('change', updateConvocatoriaSummary);
  });
+
+ // Auto-búsqueda inteligente por Cédula o Unidad
+ const cedulaInput = document.getElementById('lookup-cedula');
+ const unitInput = document.getElementById('lookup-unit');
+ const liveCard = document.getElementById('lookup-live-card');
+ const socioDisplay = document.getElementById('auto-socio-name-display');
+ const socioSelect = document.getElementById('fld-socio_id');
+ const unitSelect = document.getElementById('fld-unit_id');
+ const toggleManual = document.getElementById('btn-toggle-manual-socio');
+
+ if (cedulaInput || unitInput || socioDisplay) {
+  let lookupSocios = [];
+  let lookupUnits = [];
+  const scriptSocios = document.getElementById('socio-lookup-data');
+  const scriptUnits = document.getElementById('unit-lookup-data');
+  if (scriptSocios) {
+   try { lookupSocios = JSON.parse(scriptSocios.textContent || '[]'); } catch(e){}
+  }
+  if (scriptUnits) {
+   try { lookupUnits = JSON.parse(scriptUnits.textContent || '[]'); } catch(e){}
+  }
+
+  function findMatchByCedula(ced) {
+   if (!ced) return null;
+   const clean = ced.trim().toLowerCase();
+   return lookupSocios.find(s => s.cedula && s.cedula.toLowerCase() === clean) ||
+          lookupSocios.find(s => s.cedula && s.cedula.toLowerCase().startsWith(clean)) ||
+          lookupUnits.find(u => u.cedula && u.cedula.toLowerCase() === clean);
+  }
+
+  function findMatchByUnit(code) {
+   if (!code) return null;
+   const clean = code.trim().toLowerCase();
+   let u = lookupUnits.find(item => item.unit_code && item.unit_code.toLowerCase() === clean);
+   if (u) {
+    const s = lookupSocios.find(item => String(item.socio_id) === String(u.socio_id));
+    return s || {
+     socio_id: u.socio_id,
+     name: u.socio_name,
+     cedula: u.cedula,
+     unit_id: u.unit_id,
+     unit_code: u.unit_code,
+     plate: u.plate,
+     active: 1
+    };
+   }
+   const num = clean.replace(/\D/g, '');
+   if (num) {
+    u = lookupUnits.find(item => {
+     if (!item.unit_code) return false;
+     const itemNum = item.unit_code.replace(/\D/g, '');
+     return itemNum && (parseInt(itemNum, 10) === parseInt(num, 10));
+    });
+    if (u) {
+     const s = lookupSocios.find(item => String(item.socio_id) === String(u.socio_id));
+     return s || {
+      socio_id: u.socio_id,
+      name: u.socio_name,
+      cedula: u.cedula,
+      unit_id: u.unit_id,
+      unit_code: u.unit_code,
+      plate: u.plate,
+      active: 1
+     };
+    }
+   }
+   return null;
+  }
+
+  function applyMatch(data, source) {
+   if (!data) return;
+
+   if (socioDisplay && data.name) {
+    socioDisplay.value = data.name;
+   }
+
+   const plateDisplay = document.getElementById('display-vehicle-plate');
+   if (plateDisplay) {
+    plateDisplay.value = data.plate ? (data.plate + (data.unit_code ? ' · Unidad ' + data.unit_code : '')) : 'Sin vehículo asignado';
+   }
+
+   if (socioSelect && data.socio_id) {
+    socioSelect.value = String(data.socio_id);
+   }
+
+   if (unitSelect && data.unit_id) {
+    unitSelect.value = String(data.unit_id);
+   }
+
+   if (source !== 'cedula' && cedulaInput && data.cedula) {
+    cedulaInput.value = data.cedula;
+   }
+   if (source !== 'unit' && unitInput && data.unit_code) {
+    unitInput.value = data.unit_code;
+   }
+
+   if (liveCard) {
+    const elName = document.getElementById('card-socio-name');
+    const elCed = document.getElementById('card-socio-cedula');
+    const elUnit = document.getElementById('card-unit-code');
+    const elPlate = document.getElementById('card-plate');
+    const elStatus = document.getElementById('card-status');
+    if (elName) elName.textContent = data.name || 'Sin socio asignado';
+    if (elCed) elCed.textContent = data.cedula || 'Sin cédula registrada';
+    if (elUnit) elUnit.textContent = data.unit_code ? 'Unidad ' + data.unit_code : 'Sin unidad asignada';
+    if (elPlate) elPlate.textContent = data.plate ? 'Placa ' + data.plate : 'Sin placa asignada';
+    if (elStatus) {
+     elStatus.textContent = (data.active === 0) ? 'Inactivo' : 'Activo';
+     elStatus.className = 'pill ' + ((data.active === 0) ? 'orange' : 'green');
+    }
+    liveCard.style.display = 'block';
+   }
+  }
+
+  if (cedulaInput) {
+   const handleCedulaInput = () => {
+    const match = findMatchByCedula(cedulaInput.value);
+    if (match) applyMatch(match, 'cedula');
+   };
+   cedulaInput.addEventListener('input', handleCedulaInput);
+   cedulaInput.addEventListener('change', handleCedulaInput);
+  }
+
+  if (unitInput) {
+   const handleUnitInput = () => {
+    const match = findMatchByUnit(unitInput.value);
+    if (match) applyMatch(match, 'unit');
+   };
+   unitInput.addEventListener('input', handleUnitInput);
+   unitInput.addEventListener('change', handleUnitInput);
+  }
+
+  if (socioSelect) {
+   socioSelect.addEventListener('change', () => {
+    const val = socioSelect.value;
+    const match = lookupSocios.find(s => String(s.socio_id) === String(val));
+    if (match) applyMatch(match, 'select');
+   });
+  }
+
+  if (toggleManual && socioSelect) {
+   toggleManual.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (socioSelect.style.display === 'none') {
+     socioSelect.style.display = 'block';
+     toggleManual.textContent = 'Ocultar selector desplegable manual';
+    } else {
+     socioSelect.style.display = 'none';
+     toggleManual.textContent = '(Opcional) ¿Elegir nombre de la lista desplegable?';
+    }
+   });
+  }
+
+  if (socioSelect && socioSelect.value) {
+   const initMatch = lookupSocios.find(s => String(s.socio_id) === String(socioSelect.value));
+   if (initMatch) applyMatch(initMatch, 'init');
+  }
+ }
+
+ // ==========================================================================
+ // ANIMACIÓN DE TRANSICIÓN: BUS CONDUCIENDO AL CAMBIAR DE MÓDULO (1.8s - 2.0s)
+ // ==========================================================================
+ const busOverlay = document.getElementById('bus-transition-overlay');
+ const sideNavLinks = document.querySelectorAll('.side-nav a.nav-link');
+ if (busOverlay && sideNavLinks.length) {
+  const destNameEl = document.getElementById('bus-destination-name');
+  const durationSec = parseFloat(busOverlay.dataset.duration || '1.8') || 1.8;
+  const durationMs = Math.round(durationSec * 1000);
+
+  sideNavLinks.forEach(link => {
+   link.addEventListener('click', function(e) {
+    if (this.classList.contains('active') || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const targetUrl = this.getAttribute('href');
+    if (!targetUrl || targetUrl.startsWith('#')) return;
+
+    e.preventDefault();
+    const destTitle = this.querySelector('span:last-child')?.textContent || 'Módulo';
+    if (destNameEl) destNameEl.textContent = 'Rumbo a ' + destTitle + '...';
+
+    busOverlay.style.display = 'flex';
+    requestAnimationFrame(() => {
+     busOverlay.classList.add('animating');
+    });
+
+    setTimeout(() => {
+     window.location.href = targetUrl;
+    }, durationMs);
+   });
+  });
+ }
+
+ // ==========================================================================
+ // CONFIGURACIÓN Y VISTA PREVIA INTERACTIVA EN VIVO (LIVE PREVIEW)
+ // ==========================================================================
+ const configForm = document.getElementById('config-form');
+ if (configForm) {
+  const inCompanyName = document.getElementById('cfg-company-name');
+  const inCompanySlogan = document.getElementById('cfg-company-slogan');
+  const inFooterText = document.getElementById('cfg-footer-text');
+  const inPrimaryColor = document.getElementById('cfg-primary-color');
+  const inPrimaryHex = document.getElementById('cfg-primary-hex');
+  const inSidebarColor = document.getElementById('cfg-sidebar-color');
+  const inSidebarHex = document.getElementById('cfg-sidebar-hex');
+  const inAccentColor = document.getElementById('cfg-accent-color');
+  const inAccentHex = document.getElementById('cfg-accent-hex');
+  const inFontFamily = document.getElementById('cfg-font-family');
+
+  const mockBrandTitle = document.getElementById('mockup-brand-title');
+  const mockBrandSlogan = document.getElementById('mockup-brand-slogan');
+  const mockFooterText = document.getElementById('mockup-footer-text');
+  const mockSidebar = document.getElementById('mockup-sidebar');
+  const mockBtnPrimary = document.getElementById('mockup-btn-primary');
+  const mockAvatar = document.getElementById('mockup-avatar');
+  const mockNavActive = document.getElementById('mockup-nav-active');
+  const mockCardAccent = document.getElementById('mockup-card-accent');
+  const mockFrame = document.getElementById('live-mockup-frame');
+  const btnDemoAnim = document.getElementById('btn-demo-bus-anim');
+
+  function updateMockup() {
+   if (mockBrandTitle && inCompanyName) mockBrandTitle.textContent = inCompanyName.value || 'BusGestión';
+   if (mockBrandSlogan && inCompanySlogan) mockBrandSlogan.textContent = inCompanySlogan.value || '';
+   if (mockFooterText && inFooterText) mockFooterText.textContent = inFooterText.value || '';
+
+   const primary = inPrimaryColor ? inPrimaryColor.value : '#1d4ed8';
+   const sidebar = inSidebarColor ? inSidebarColor.value : '#0f172a';
+   const accent = inAccentColor ? inAccentColor.value : '#f59e0b';
+
+   if (mockSidebar) mockSidebar.style.background = sidebar;
+   if (mockBtnPrimary) mockBtnPrimary.style.background = primary;
+   if (mockAvatar) mockAvatar.style.background = primary;
+   if (mockNavActive) mockNavActive.style.borderLeftColor = accent;
+   if (mockCardAccent) mockCardAccent.style.color = accent;
+   if (mockFrame && inFontFamily) mockFrame.style.fontFamily = inFontFamily.value;
+  }
+
+  function bindColorPair(colorInput, hexInput) {
+   if (!colorInput || !hexInput) return;
+   colorInput.addEventListener('input', () => {
+    hexInput.value = colorInput.value.toUpperCase();
+    updateMockup();
+   });
+   hexInput.addEventListener('input', () => {
+    let val = hexInput.value.trim();
+    if (!val.startsWith('#')) val = '#' + val;
+    if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+     colorInput.value = val;
+     updateMockup();
+    }
+   });
+  }
+
+  bindColorPair(inPrimaryColor, inPrimaryHex);
+  bindColorPair(inSidebarColor, inSidebarHex);
+  bindColorPair(inAccentColor, inAccentHex);
+
+  if (inCompanyName) inCompanyName.addEventListener('input', updateMockup);
+  if (inCompanySlogan) inCompanySlogan.addEventListener('input', updateMockup);
+  if (inFooterText) inFooterText.addEventListener('input', updateMockup);
+  if (inFontFamily) inFontFamily.addEventListener('change', updateMockup);
+
+  document.querySelectorAll('.btn-preset').forEach(btn => {
+   btn.addEventListener('click', () => {
+    const p = btn.dataset.primary;
+    const s = btn.dataset.sidebar;
+    const a = btn.dataset.accent;
+    if (inPrimaryColor) inPrimaryColor.value = p;
+    if (inPrimaryHex) inPrimaryHex.value = p.toUpperCase();
+    if (inSidebarColor) inSidebarColor.value = s;
+    if (inSidebarHex) inSidebarHex.value = s.toUpperCase();
+    if (inAccentColor) inAccentColor.value = a;
+    if (inAccentHex) inAccentHex.value = a.toUpperCase();
+    updateMockup();
+   });
+  });
+
+  if (btnDemoAnim && busOverlay) {
+   btnDemoAnim.addEventListener('click', () => {
+    const destNameEl = document.getElementById('bus-destination-name');
+    if (destNameEl) destNameEl.textContent = 'Probando animación del bus...';
+    busOverlay.style.display = 'flex';
+    requestAnimationFrame(() => {
+     busOverlay.classList.add('animating');
+    });
+    const dur = (parseFloat(document.getElementById('cfg-animation-duration')?.value || '1.8') || 1.8) * 1000;
+    setTimeout(() => {
+     busOverlay.classList.remove('animating');
+     setTimeout(() => { busOverlay.style.display = 'none'; }, 250);
+    }, dur);
+   });
+  }
+
+  updateMockup();
+ }
 });

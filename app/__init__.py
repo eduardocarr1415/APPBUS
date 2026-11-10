@@ -56,7 +56,7 @@ def create_app(db_path=None, testing=False):
                 'nav':[{'key':k,'url':url,'icon':icon,'title':label} for k,url,icon,label,p in NAV if not p or has(request,p)],
                 'active':more.get('active',''),'ok':request.query_params.get('ok','')[:160],
                 'perms':getattr(request.state,'perms',set()),'year':date.today().year,
-                'period':db.current_period(),**more}
+                'period':db.current_period(),'settings':db.get_settings(),**more}
 
     def render(request, template, status_code=200,**more):
         return TEMPLATES.TemplateResponse(request,template,context(request,**more),status_code=status_code)
@@ -85,6 +85,12 @@ def create_app(db_path=None, testing=False):
         if period['closed_at']:
             raise ValueError('El periodo ya está cerrado.')
         return period
+
+    def client_ip(request: Request) -> str:
+        xff = request.headers.get('x-forwarded-for')
+        if xff:
+            return xff.split(',')[0].strip()
+        return request.client.host if (request.client and request.client.host) else '127.0.0.1'
 
     @app.middleware('http')
     async def security_middleware(request, call_next):
@@ -155,26 +161,28 @@ def create_app(db_path=None, testing=False):
         pwd=str(f.get('password',''))
         try:
             username=valid_username(username)
+            username_is_valid=True
         except ValueError:
             username_is_valid=False
             username=username[:32]
-        else:
-            username_is_valid=True
-        ip=request.client.host if request.client else 'local'
+        ip=client_ip(request)
         with db.connection() as con:
             if locked(con,username,ip):
+                Database.audit(con,None,'Bloqueo temporal','autenticacion',None,f"Acceso temporalmente bloqueado para '{username}' desde IP {ip} por 15 minutos", ip=ip)
                 return render(request,'login.html',status_code=429,error='Demasiados intentos. Inténtelo nuevamente en 15 minutos.')
             if not username_is_valid or len(pwd)>128:
                 register_failure(con,username,ip)
+                Database.audit(con,None,'Intento fallido','autenticacion',None,f"Intento de acceso fallido con usuario inválido '{username}' desde IP {ip}", ip=ip)
                 return render(request,'login.html',status_code=401,error='Usuario o contraseña incorrectos.')
             u=con.execute('SELECT * FROM users WHERE username=?',(username,)).fetchone()
             if not u or not u['active'] or not password_ok(pwd,u['password_hash']):
                 register_failure(con,username,ip)
+                Database.audit(con,u['id'] if u else None,'Intento fallido','autenticacion',None,f"Intento de acceso fallido con usuario '{username}' desde IP {ip}", ip=ip)
                 return render(request,'login.html',status_code=401,error='Usuario o contraseña incorrectos.')
             reset_failures(con,username,ip)
             con.execute('DELETE FROM sessions WHERE token_hash=?',(request.state.sid_hash,))
             token,csrf=make_session(con,u['id'],u['session_version'])
-            Database.audit(con,u['id'],'Ingresar','autenticacion',u['id'])
+            Database.audit(con,u['id'],'Inicio de sesión','autenticacion',u['id'],f"Inicio de sesión exitoso de '{u['username']}' ({u['full_name']}) desde IP {ip}", ip=ip)
         request.state.cookie_to_set=token
         return redir('/')
 
@@ -184,15 +192,22 @@ def create_app(db_path=None, testing=False):
 
     @app.post('/recuperar')
     async def recover(request:Request):
-        await csrf_check(request)
+        f=await csrf_check(request)
+        username=str(f.get('username','')).strip().lower()
+        ip=client_ip(request)
+        with db.connection() as con:
+            Database.audit(con,None,'Recuperar clave','autenticacion',None,f"Solicitud de recuperación para '{username}' desde IP {ip}", ip=ip)
         # Intentionally do not disclose whether a user exists. Local version has no outgoing email service.
         return render(request,'recover.html',sent=True)
 
     @app.post('/logout')
     async def logout(request:Request):
         await csrf_check(request)
+        ip=client_ip(request)
         with db.connection() as con:
-            if current(request): Database.audit(con,current(request)['id'],'Salir','autenticacion',current(request)['id'])
+            user = current(request)
+            if user:
+                Database.audit(con,user['id'],'Cierre de sesión','autenticacion',user['id'],f"Cierre de sesión del usuario '{user['username']}'", ip=ip)
             con.execute('DELETE FROM sessions WHERE token_hash=?',(request.state.sid_hash,))
         request.state.clear_cookie=True
         return redir('/login')
@@ -210,10 +225,11 @@ def create_app(db_path=None, testing=False):
         stored=db.one('SELECT password_hash FROM users WHERE id=?',(u['id'],))
         if not password_ok(old,stored['password_hash']) or not password_valid(new) or new!=again:
             return render(request,'profile.html',active='perfil',error='Revise la contraseña actual, el mínimo de 12 caracteres y la confirmación.',status_code=400)
+        ip=client_ip(request)
         with db.connection() as con:
             con.execute('UPDATE users SET password_hash=?,session_version=session_version+1 WHERE id=?',(password_hash(new),u['id']))
             con.execute('DELETE FROM sessions WHERE user_id=?',(u['id'],))
-            Database.audit(con,u['id'],'Cambiar contraseña','usuarios',u['id'])
+            Database.audit(con,u['id'],'Cambiar contraseña','usuarios',u['id'],f"El usuario '{u['username']}' cambió su contraseña", ip=ip)
         request.state.clear_cookie=True
         return redir('/login','Contraseña actualizada. Inicie sesión nuevamente.')
 
@@ -243,6 +259,62 @@ def create_app(db_path=None, testing=False):
         return render(request,'dashboard.html',active='dashboard',cards=cards,topdebts=topdebts,latest=latest,
                       next_meetings=next_meetings,monthly=monthly,socios_count=soc,units_count=units,fmt=fmt)
 
+    def get_socio_unit_data():
+        socios = db.all("""
+            SELECT 
+                s.id AS socio_id,
+                s.name,
+                COALESCE(s.cedula, '') AS cedula,
+                COALESCE(s.phone, '') AS phone,
+                s.active,
+                u.id AS unit_id,
+                COALESCE(u.code, '') AS unit_code,
+                COALESCE(v.plate, '') AS plate
+            FROM socios s
+            LEFT JOIN units u ON u.socio_id = s.id AND u.status = 'Activa'
+            LEFT JOIN vehicles v ON v.id = u.vehicle_id
+            WHERE s.active = 1
+            ORDER BY s.name
+        """)
+        units = db.all("""
+            SELECT 
+                u.id AS unit_id,
+                u.code AS unit_code,
+                u.status AS unit_status,
+                s.id AS socio_id,
+                COALESCE(s.name, 'Sin socio asignado') AS socio_name,
+                COALESCE(s.cedula, '') AS cedula,
+                COALESCE(v.plate, '') AS plate
+            FROM units u
+            LEFT JOIN socios s ON s.id = u.socio_id
+            LEFT JOIN vehicles v ON v.id = u.vehicle_id
+            ORDER BY u.code
+        """)
+        return socios, units
+
+    @app.get('/api/lookup-socio-unit')
+    def api_lookup_socio_unit(request: Request, q: str = ''):
+        permitted(request)
+        q = q.strip()
+        if not q:
+            return JSONResponse([])
+        rows = db.all("""
+            SELECT 
+                s.id AS socio_id,
+                s.name,
+                COALESCE(s.cedula, '') AS cedula,
+                COALESCE(s.phone, '') AS phone,
+                u.id AS unit_id,
+                COALESCE(u.code, '') AS unit_code,
+                COALESCE(v.plate, '') AS plate
+            FROM socios s
+            LEFT JOIN units u ON u.socio_id = s.id AND u.status = 'Activa'
+            LEFT JOIN vehicles v ON v.id = u.vehicle_id
+            WHERE s.cedula LIKE ? OR u.code LIKE ? OR s.name LIKE ?
+            LIMIT 15
+        """, (f'%{q}%', f'%{q}%', f'%{q}%'))
+        return JSONResponse(rows)
+
     @app.get('/nuevo/{kind}')
     def new_form(request:Request,kind:str):
         if kind=='convocatorias':
@@ -253,8 +325,9 @@ def create_app(db_path=None, testing=False):
         initial={'joined':date.today().isoformat(),'meeting_date':date.today().isoformat(),'day':date.today().isoformat(),
                  'issued':date.today().isoformat(),'occurred_at':date.today().isoformat(),'week_start':date.today().isoformat(),
                  'changed_at':date.today().isoformat(),'transferred_at':date.today().isoformat()}
-        return render(request,'form.html',active='',form=s,values=initial,error=None,errors={},
-                      cancel=parent(kind),editing=False)
+        socios_l, units_l = get_socio_unit_data()
+        return render(request,'form.html',active='',form=s,values=initial,error=None,errors={},cancel=parent(kind),editing=False,
+                      socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
 
     @app.post('/nuevo/{kind}')
     async def new_save(request:Request,kind:str):
@@ -262,11 +335,13 @@ def create_app(db_path=None, testing=False):
         fields=await csrf_check(request)
         values={k:str(v) for k,v in fields.items() if k!='_csrf'}
         try:
-            save(db,kind,values,current(request)['id'])
+            save(db,kind,values,current(request)['id'],ip=client_ip(request))
         except (ValueError,sqlite3.IntegrityError) as exc:
             msg='No se pudo guardar: ya existe un registro igual o faltan datos válidos.' if isinstance(exc,sqlite3.IntegrityError) else str(exc)
+            socios_l, units_l = get_socio_unit_data()
             return render(request,'form.html',status_code=400,active='',form=spec(db,kind),values=values,
-                          error=msg,errors=field_errors_for(exc),cancel=parent(kind),editing=False)
+                          error=msg,errors=field_errors_for(exc),cancel=parent(kind),editing=False,
+                          socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
         message='Traspaso registrado; propietario e historial actualizados.' if kind=='traspasos' else 'Registro guardado correctamente.'
         return redir(parent(kind),message)
 
@@ -283,21 +358,22 @@ def create_app(db_path=None, testing=False):
         table=EDITABLE[kind][0]
         item=db.one(f'SELECT * FROM {table} WHERE id=?',(record_id,))
         if not item:raise HTTPException(404,'Registro no encontrado.')
-        return render(request,'form.html',active='',form=spec(db,kind),
-                      values={f:str(item[column] or '') for f,column in EDIT_KEYS[kind].items()},
-                      error=None,errors={},cancel=parent(kind),editing=True,record_id=record_id)
+        socios_l, units_l = get_socio_unit_data()
+        return render(request,'form.html',active='',form=spec(db,kind),values={f:str(item[column] or '') for f,column in EDIT_KEYS[kind].items()},error=None,errors={},cancel=parent(kind),editing=True,record_id=record_id,
+                      socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
 
     @app.post('/editar/{kind}/{record_id}')
     async def edit_save(request:Request,kind:str,record_id:int):
         permitted(request,EDITABLE.get(kind,('', '__no__'))[1])
         f=await csrf_check(request)
         v={k:str(val) for k,val in f.items() if k!='_csrf'}
-        try:save(db,kind,v,current(request)['id'],record_id)
+        try:save(db,kind,v,current(request)['id'],record_id,ip=client_ip(request))
         except (ValueError,sqlite3.IntegrityError) as exc:
             msg='No se pudo guardar: ya existe un registro igual o faltan datos válidos.' if isinstance(exc,sqlite3.IntegrityError) else str(exc)
+            socios_l, units_l = get_socio_unit_data()
             return render(request,'form.html',active='',form=spec(db,kind),values=v,error=msg,
-                          errors=field_errors_for(exc),cancel=parent(kind),editing=True,
-                          record_id=record_id,status_code=400)
+                          errors=field_errors_for(exc),cancel=parent(kind),editing=True,record_id=record_id,status_code=400,
+                          socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
         return redir(parent(kind),'Cambios guardados.')
 
     @app.post('/permisos/{role_id}')
@@ -312,11 +388,12 @@ def create_app(db_path=None, testing=False):
         # A Socio cannot receive permissions allowing access to the company's confidential information.
         if role['name']=='Socio' and checked-{'actas.ver','finanzas.ver','multas.ver','unidades.ver'}:
             raise HTTPException(400,'El rol Socio solo permite consulta de su información y actas.')
+        ip=client_ip(request)
         with db.connection() as con:
             con.execute('DELETE FROM role_permissions WHERE role_id=?',(role_id,))
             for p in checked:con.execute('INSERT INTO role_permissions(role_id,permission) VALUES(?,?)',(role_id,p))
             con.execute('UPDATE users SET session_version=session_version+1 WHERE role_id=?',(role_id,))
-            Database.audit(con,current(request)['id'],'Actualizar','permisos',role_id,role['name'])
+            Database.audit(con,current(request)['id'],'Actualizar permisos','permisos',role_id,f"Permisos actualizados para el rol '{role['name']}' ({len(checked)} permisos)", ip=ip)
         return redir('/usuarios?tab=permisos','Permisos actualizados.')
 
     @app.post('/usuarios/{user_id}/estado')
@@ -328,10 +405,11 @@ def create_app(db_path=None, testing=False):
         if user_id==current(request)['id']:raise HTTPException(400,'No puede desactivar su propia cuenta.')
         if user['role']=='Administrador' and user['active'] and db.one('SELECT COUNT(*) n FROM users u JOIN roles r ON r.id=u.role_id WHERE r.name=? AND u.active=1',('Administrador',))['n']<=1:
             raise HTTPException(400,'Debe existir al menos un administrador activo.')
+        ip=client_ip(request)
         with db.connection() as con:
             con.execute('UPDATE users SET active=?,session_version=session_version+1 WHERE id=?',(0 if user['active'] else 1,user_id))
             con.execute('DELETE FROM sessions WHERE user_id=?',(user_id,))
-            Database.audit(con,current(request)['id'],'Cambiar estado','usuarios',user_id)
+            Database.audit(con,current(request)['id'],'Cambiar estado','usuarios',user_id,f"Usuario '{user['username']}' cambiado a {'Inactivo' if user['active'] else 'Activo'}", ip=ip)
         return redir('/usuarios','Estado actualizado.')
 
     @app.post('/usuarios/{user_id}/reiniciar-clave')
@@ -341,15 +419,73 @@ def create_app(db_path=None, testing=False):
         u=db.one('SELECT id,username FROM users WHERE id=?',(user_id,))
         if not u:raise HTTPException(404,'Usuario no encontrado.')
         new_secret=secrets.token_urlsafe(18)
+        ip=client_ip(request)
         with db.connection() as con:
             con.execute('UPDATE users SET password_hash=?,session_version=session_version+1 WHERE id=?',(password_hash(new_secret),user_id))
             con.execute('DELETE FROM sessions WHERE user_id=?',(user_id,))
-            Database.audit(con,current(request)['id'],'Restablecer clave','usuarios',user_id)
+            Database.audit(con,current(request)['id'],'Restablecer clave','usuarios',user_id,f"Clave temporal generada para el usuario '{u['username']}'", ip=ip)
         return render(request,'one_time_secret.html',active='usuarios',account=u['username'],secret=new_secret)
+
+    @app.get('/multas/{fine_id}/pagar')
+    def pay_fine_page(request:Request,fine_id:int):
+        if not (has(request,'multas.editar') or has(request,'finanzas.editar')):
+            raise HTTPException(403,'No tiene permisos para cobrar multas.')
+        fine=db.one('SELECT f.*,s.name AS socio_name,s.cedula AS socio_cedula,u.code AS unit_code FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE f.id=?',(fine_id,))
+        if not fine: raise HTTPException(404,'Multa no encontrada.')
+        if fine['status']!='Pendiente':
+            return redir('/multas',f'La multa #{fine_id} ya se encuentra en estado {fine["status"]}.')
+        debt=db.one('SELECT * FROM debts WHERE fine_id=?',(fine_id,))
+        pending=(debt['amount_cents']-debt['paid_cents']) if debt else fine['amount_cents']
+        return render(request,'pay_fine.html',active='multas',fine=fine,
+                      amount_fmt=fmt(pending),today=date.today().isoformat())
+
+    @app.post('/multas/{fine_id}/pagar')
+    async def pay_fine_action(request:Request,fine_id:int):
+        if not (has(request,'multas.editar') or has(request,'finanzas.editar')):
+            raise HTTPException(403,'No tiene permisos para cobrar multas.')
+        f=await csrf_check(request)
+        method=str(f.get('method','Efectivo')).strip()
+        if method not in ('Efectivo','Transferencia','Depósito'):
+            method='Efectivo'
+        pay_day=str(f.get('day',date.today().isoformat())).strip() or date.today().isoformat()
+        notes=str(f.get('notes','')).strip()
+        ip=client_ip(request)
+        uid=current(request)['id']
+        with db.connection() as con:
+            period=active_period_for_write(con)
+            fine=con.execute('SELECT * FROM fines WHERE id=?',(fine_id,)).fetchone()
+            if not fine or fine['status']!='Pendiente':
+                raise HTTPException(400,'Solo se pueden cobrar multas en estado Pendiente.')
+            debt=con.execute('SELECT * FROM debts WHERE fine_id=?',(fine_id,)).fetchone()
+            if not debt:
+                debt_id=con.execute(
+                    'INSERT INTO debts(period_id,socio_id,concept,amount_cents,issued,fine_id,created_by) VALUES(?,?,?,?,?,?,?)',
+                    (fine['period_id'],fine['socio_id'],'Multa: '+fine['reason'],fine['amount_cents'],fine['occurred_at'],fine_id,uid)
+                ).lastrowid
+                debt=con.execute('SELECT * FROM debts WHERE id=?',(debt_id,)).fetchone()
+
+            pending=debt['amount_cents']-debt['paid_cents']
+            if pending<=0:
+                con.execute("UPDATE fines SET status='Pagada' WHERE id=?",(fine_id,))
+                return redir('/multas?tab=pagadas',f'La multa #{fine_id} ya se encontraba saldada.')
+
+            pay_id=con.execute(
+                'INSERT INTO payments(period_id,debt_id,socio_id,amount_cents,method,day,created_by) VALUES(?,?,?,?,?,?,?)',
+                (period['id'],debt['id'],debt['socio_id'],pending,method,pay_day,uid)
+            ).lastrowid
+            con.execute('UPDATE debts SET paid_cents=paid_cents+? WHERE id=?',(pending,debt['id']))
+            con.execute("UPDATE fines SET status='Pagada' WHERE id=?",(fine_id,))
+            note_str=f" ({notes})" if notes else ""
+            Database.audit(con,uid,'Pagar multa','multas',fine_id,
+                           f"Cobro y pago de Multa #{fine_id} por {pending/100:.2f} S/ ({method}){note_str}", ip=ip)
+            Database.audit(con,uid,'Registrar','pagos',pay_id,
+                           f"Abono de {pending/100:.2f} S/ a deuda #{debt['id']} por multa #{fine_id} ({method}){note_str}", ip=ip)
+        return redir('/multas?tab=pagadas',f'Multa #{fine_id} pagada y registrada exitosamente.')
 
     @app.post('/multas/{fine_id}/anular')
     async def void_fine(request:Request,fine_id:int):
         permitted(request,'multas.editar');await csrf_check(request)
+        ip=client_ip(request)
         with db.connection() as con:
             period=active_period_for_write(con)
             fine=con.execute('SELECT * FROM fines WHERE id=?',(fine_id,)).fetchone()
@@ -360,7 +496,7 @@ def create_app(db_path=None, testing=False):
                 raise HTTPException(400,'No se puede anular una multa con pagos aplicados.')
             con.execute('DELETE FROM debts WHERE fine_id=?',(fine_id,))
             con.execute("UPDATE fines SET status='Anulada' WHERE id=?",(fine_id,))
-            Database.audit(con,current(request)['id'],'Anular','multas',fine_id)
+            Database.audit(con,current(request)['id'],'Anular multa','multas',fine_id,f"Multa ID {fine_id} anulada (Motivo: {fine['reason']})", ip=ip)
         return redir('/multas','Multa anulada con registro de auditoría.')
 
     @app.post('/actas/{meeting_id}/archivo')
@@ -382,10 +518,11 @@ def create_app(db_path=None, testing=False):
         safe=secrets.token_hex(24)+ext
         target=app.state.upload_dir/safe
         target.write_bytes(data)
+        ip=client_ip(request)
         try:
             with db.connection() as con:
                 rid=con.execute('INSERT INTO docs(meeting_id,filename,safe_path,kind,uploaded_by) VALUES(?,?,?,?,?)',(meeting_id,Path(file.filename).name[:120],safe,'acta',current(request)['id'])).lastrowid
-                Database.audit(con,current(request)['id'],'Adjuntar','actas',meeting_id,f'Archivo {rid}')
+                Database.audit(con,current(request)['id'],'Adjuntar acta','actas',meeting_id,f"Archivo '{Path(file.filename).name}' subido a reunión ID {meeting_id}", ip=ip)
         except Exception:
             target.unlink(missing_ok=True)
             raise
@@ -481,6 +618,8 @@ def create_app(db_path=None, testing=False):
                 result += [{'title':'Reunión: '+r['topic'],'detail':r['meeting_date'],'url':'/actas?tab=reuniones'} for r in db.all('SELECT topic,meeting_date FROM meetings WHERE topic LIKE ? LIMIT 12',('%'+q+'%',))]
             if has(request,'unidades.ver') and current(request)['role']!='Socio':
                 result += [{'title':'Unidad: '+r['code'],'detail':r['status'],'url':'/unidades'} for r in db.all('SELECT code,status FROM units WHERE code LIKE ? LIMIT 12',('%'+q+'%',))]
+            if has(request,'auditoria.ver'):
+                result += [{'title':'Historial: '+r['action'],'detail':f"{r['created_at']} - {r['summary'][:60]}",'url':'/auditoria'} for r in db.all('SELECT action,created_at,summary FROM audit WHERE summary LIKE ? OR action LIKE ? LIMIT 12',('%'+q+'%','%'+q+'%'))]
         return render(request,'search.html',active='',results=result,q=q)
 
 
@@ -505,10 +644,11 @@ def create_app(db_path=None, testing=False):
     async def complete_meeting(request:Request,meeting_id:int):
         permitted(request,'actas.editar');await csrf_check(request)
         with db.connection() as con:
-            if not con.execute('SELECT id FROM meetings WHERE id=?',(meeting_id,)).fetchone():
+            m=con.execute('SELECT topic FROM meetings WHERE id=?',(meeting_id,)).fetchone()
+            if not m:
                 raise HTTPException(404,'Reunión no encontrada.')
             con.execute("UPDATE meetings SET status='Realizada' WHERE id=?",(meeting_id,))
-            Database.audit(con,current(request)['id'],'Actualizar','reuniones',meeting_id,'Reunión realizada')
+            Database.audit(con,current(request)['id'],'Reunión realizada','reuniones',meeting_id,f"Reunión ID {meeting_id} '{m['topic']}' marcada como realizada", ip=client_ip(request))
         return redir('/reunion/'+str(meeting_id),'Reunión marcada como realizada.')
 
     @app.get('/usuario/{user_id}')
@@ -540,7 +680,7 @@ def create_app(db_path=None, testing=False):
         with db.connection() as con:
             con.execute('UPDATE users SET role_id=?,session_version=session_version+1 WHERE id=?',(role_id,user_id))
             con.execute('DELETE FROM sessions WHERE user_id=?',(user_id,))
-            Database.audit(con,current(request)['id'],'Cambiar rol','usuarios',user_id,role['name'])
+            Database.audit(con,current(request)['id'],'Cambiar rol','usuarios',user_id,f"Rol de '{user['username']}' cambiado de '{current_role['name']}' a '{role['name']}'", ip=client_ip(request))
         return redir('/usuario/'+str(user_id),'Rol actualizado y sesiones anteriores invalidadas.')
 
     @app.post('/actas/asistencia')
@@ -574,8 +714,8 @@ def create_app(db_path=None, testing=False):
                     VALUES(?, ?, ?)
                     ON CONFLICT(meeting_id, socio_id) DO UPDATE SET status=excluded.status
                 ''', (meeting_id, sid, status))
-            Database.audit(con, current(request)['id'], 'Actualizar', 'asistencia', meeting_id,
-                           f'Asistencia reunión {meeting_id}: {len(checked_socio_ids)} de {len(all_socio_ids)} convocados')
+            Database.audit(con, current(request)['id'], 'Guardar asistencia', 'asistencia', meeting_id,
+                           f'Asistencia reunión {meeting_id}: {len(checked_socio_ids)} de {len(all_socio_ids)} convocados', ip=client_ip(request))
 
         if request.headers.get('x-requested-with') == 'XMLHttpRequest' or 'application/json' in request.headers.get('accept', ''):
             return JSONResponse({'ok': True, 'message': 'Asistencia guardada correctamente.', 'meeting_id': meeting_id})
@@ -623,13 +763,59 @@ def create_app(db_path=None, testing=False):
                       notified = excluded.notified,
                       notified_at = excluded.notified_at
                 ''', (meeting_id, sid, is_notif, notif_time))
-            Database.audit(con, current(request)['id'], 'Actualizar', 'convocatorias', meeting_id,
-                           f'Convocatoria reunión {meeting_id}: {len(notified_ids)} notificados de {len(all_socio_ids)}')
+            Database.audit(con, current(request)['id'], 'Guardar convocatoria', 'convocatorias', meeting_id,
+                           f'Convocatoria reunión {meeting_id}: {len(notified_ids)} notificados de {len(all_socio_ids)} convocados', ip=client_ip(request))
 
         if request.headers.get('x-requested-with') == 'XMLHttpRequest' or 'application/json' in request.headers.get('accept', ''):
             return JSONResponse({'ok': True, 'message': 'Convocatoria y notificaciones guardadas correctamente.', 'meeting_id': meeting_id})
 
         return redir(f'/actas?tab=convocatorias&meeting_id={meeting_id}', 'Convocatoria y notificaciones guardadas correctamente.')
+
+    @app.get('/configuracion')
+    def configuracion_page(request:Request):
+        permitted(request, 'configuracion.ver')
+        if current(request)['role'] != 'Administrador':
+            raise HTTPException(403, 'Apartado reservado exclusivamente para el Administrador.')
+        curr_settings = db.get_settings()
+        return render(request, 'configuracion.html', active='configuracion',
+                      current_settings=curr_settings)
+
+    @app.post('/configuracion')
+    async def configuracion_save(request:Request):
+        permitted(request, 'configuracion.ver')
+        if current(request)['role'] != 'Administrador':
+            raise HTTPException(403, 'Apartado reservado exclusivamente para el Administrador.')
+        f = await csrf_check(request)
+        new_s = {
+            'company_name': str(f.get('company_name', '')).strip()[:100] or 'Compañía de Transportes Guaytacama',
+            'company_slogan': str(f.get('company_slogan', '')).strip()[:150] or 'Buses Guaytacama · Servicio Interparroquial e Interprovincial',
+            'primary_color': str(f.get('primary_color', '#1d4ed8')).strip()[:20],
+            'sidebar_color': str(f.get('sidebar_color', '#0f172a')).strip()[:20],
+            'accent_color': str(f.get('accent_color', '#f59e0b')).strip()[:20],
+            'font_family': str(f.get('font_family', 'Inter, system-ui, sans-serif')).strip()[:80],
+            'bus_animation': '1' if f.get('bus_animation') else '0',
+            'animation_duration': str(f.get('animation_duration', '1.8')).strip()[:10],
+            'footer_text': str(f.get('footer_text', '')).strip()[:150] or 'Transportes Guaytacama · Sistema de Control Operativo y Flota'
+        }
+        db.update_settings(new_s)
+        ip = client_ip(request)
+        with db.connection() as con:
+            Database.audit(con, current(request)['id'], 'Configurar sistema', 'sistema', None,
+                           f"Personalización visual y de empresa actualizada (Color: {new_s['primary_color']}, Animación: {new_s['bus_animation']})", ip=ip)
+        return redir('/configuracion', 'Configuración de página guardada y aplicada correctamente.')
+
+    @app.post('/configuracion/reset')
+    async def configuracion_reset(request:Request):
+        permitted(request, 'configuracion.ver')
+        if current(request)['role'] != 'Administrador':
+            raise HTTPException(403, 'Apartado reservado exclusivamente para el Administrador.')
+        await csrf_check(request)
+        db.reset_settings()
+        ip = client_ip(request)
+        with db.connection() as con:
+            Database.audit(con, current(request)['id'], 'Restablecer configuración', 'sistema', None,
+                           "Se restauraron los colores y textos predeterminados de fábrica", ip=ip)
+        return redir('/configuracion', 'Se han restaurado los valores predeterminados de fábrica.')
 
     @app.get('/{module_name}')
     def module_page(request:Request,module_name:str,tab:str=''):
@@ -638,6 +824,8 @@ def create_app(db_path=None, testing=False):
         perm={'socios':'socios.ver','actas':'actas.ver','finanzas':'finanzas.ver','multas':'multas.ver',
               'unidades':'unidades.ver','reportes':'reportes.ver','usuarios':'usuarios.ver'}[module_name]
         permitted(request,perm)
+        if module_name=='auditoria' and current(request)['role']!='Administrador':
+            raise HTTPException(403,'Apartado reservado exclusivamente para el Administrador.')
         if not tab or tab not in dict(TABS[module_name]): tab=TABS[module_name][0][0]
         u=current(request)
         data=modules(db,module_name,tab,u['role'],u['socio_id'])

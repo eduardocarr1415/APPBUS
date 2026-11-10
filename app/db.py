@@ -18,6 +18,7 @@ PERMISSIONS = {
     'cierres.ejecutar': 'Cerrar el ciclo anual de multas',
     'usuarios.ver': 'Consultar usuarios', 'usuarios.editar': 'Crear y administrar usuarios',
     'roles.editar': 'Administrar roles y permisos', 'auditoria.ver': 'Consultar registro de auditoría',
+    'configuracion.ver': 'Configurar y parametrizar página',
 }
 ROLES = {
     'Administrador': list(PERMISSIONS),
@@ -145,7 +146,12 @@ CREATE TABLE IF NOT EXISTS vigilance (
 );
 CREATE TABLE IF NOT EXISTS audit (
  id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id), action TEXT NOT NULL,
- entity TEXT NOT NULL, record_id INTEGER, summary TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ entity TEXT NOT NULL, record_id INTEGER, summary TEXT, ip_address TEXT DEFAULT '127.0.0.1',
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS system_settings (
+ key TEXT PRIMARY KEY,
+ value TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_incomes_period ON incomes(period_id,day);
 CREATE INDEX IF NOT EXISTS idx_payments_period ON payments(period_id,day);
@@ -187,6 +193,9 @@ class Database:
         with self.connection() as con:
             con.executescript(DDL)
             con.execute('PRAGMA journal_mode=WAL')
+            cols = [c[1] for c in con.execute('PRAGMA table_info(audit)').fetchall()]
+            if 'ip_address' not in cols:
+                con.execute("ALTER TABLE audit ADD COLUMN ip_address TEXT DEFAULT '127.0.0.1'")
             for name, ps in ROLES.items():
                 existing=con.execute('SELECT id FROM roles WHERE name=?',(name,)).fetchone()
                 if existing:
@@ -194,6 +203,9 @@ class Database:
                 rid=con.execute('INSERT INTO roles(name) VALUES(?)',(name,)).lastrowid
                 for perm in ps:
                     con.execute('INSERT INTO role_permissions(role_id,permission) VALUES(?,?)',(rid,perm))
+            admin_row = con.execute("SELECT id FROM roles WHERE name='Administrador'").fetchone()
+            if admin_row:
+                con.execute("INSERT OR IGNORE INTO role_permissions(role_id, permission) VALUES(?, 'configuracion.ver')", (admin_row['id'],))
             self.ensure_period(con, date.today())
             self.migrate_fine_cycles(con)
             con.execute("DELETE FROM role_permissions WHERE permission IN ('vigilancia.ver','vigilancia.editar','reportes.vigilancia')")
@@ -257,6 +269,41 @@ class Database:
             return self.ensure_fine_cycle(con,date.today())
 
     @staticmethod
-    def audit(con, uid, action, entity, record_id=None, summary=''):
-        con.execute('INSERT INTO audit(user_id,action,entity,record_id,summary) VALUES(?,?,?,?,?)',
-                    (uid,action,entity,record_id,summary[:350]))
+    def audit(con, uid, action, entity, record_id=None, summary='', ip=None):
+        con.execute('INSERT INTO audit(user_id,action,entity,record_id,summary,ip_address) VALUES(?,?,?,?,?,?)',
+                    (uid,action,entity,record_id,summary[:350],ip or '127.0.0.1'))
+
+    DEFAULT_SETTINGS = {
+        'company_name': 'Compañía de Transportes Guaytacama',
+        'company_slogan': 'Buses Guaytacama · Servicio Interparroquial e Interprovincial',
+        'primary_color': '#1d4ed8',
+        'sidebar_color': '#0f172a',
+        'accent_color': '#f59e0b',
+        'font_family': "Inter, system-ui, -apple-system, sans-serif",
+        'bus_animation': '1',
+        'animation_duration': '1.8',
+        'footer_text': 'Transportes Guaytacama · Sistema de Control Operativo y Flota'
+    }
+
+    def get_settings(self):
+        settings = dict(self.DEFAULT_SETTINGS)
+        try:
+            with self.connection() as con:
+                con.execute('CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+                rows = con.execute('SELECT key, value FROM system_settings').fetchall()
+                for r in rows:
+                    settings[r['key']] = r['value']
+        except Exception:
+            pass
+        return settings
+
+    def update_settings(self, new_settings):
+        with self.connection() as con:
+            con.execute('CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+            for k, v in new_settings.items():
+                if k in self.DEFAULT_SETTINGS:
+                    con.execute('INSERT INTO system_settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (k, str(v)))
+
+    def reset_settings(self):
+        with self.connection() as con:
+            con.execute('DELETE FROM system_settings')

@@ -1,20 +1,182 @@
-{% extends 'base.html' %}{% block title %}{{ form.title }}{% endblock %}{% block content %}
-<div class="heading-row"><div><a class="back-link" href="{{ cancel }}">← Volver al módulo</a><h1>{{ 'Editar' if editing else form.title }}</h1><p>Complete los datos y guarde el registro.</p></div></div>
-{% if error %}<div class="notice danger">⚠ {{ error }}</div>{% endif %}
-{% if form.kind=='traspasos' %}<div class="notice info">Este traspaso cambia el propietario de la unidad y deja constancia de la venta del bus con sus acciones y derechos. El nuevo socio no puede tener otra unidad activa.</div>{% endif %}
-<section class="panel form-panel"><form action="{% if editing %}/editar/{{ form.kind }}/{{ record_id }}{% else %}/nuevo/{{ form.kind }}{% endif %}" method="post"><input type="hidden" name="_csrf" value="{{ csrf }}"><div class="form-grid">{% for f in form.fields %}
-{% set field_error=errors.get(f.name) %}
-<div class="field {% if f.type=='textarea' %}full{% endif %}{% if field_error %} has-error{% endif %}">
-<label for="fld-{{ f.name }}">{{ f.label }}{% if f.required %} <span class="required">*</span>{% endif %}</label>
-{% if f.type=='select' %}
-<select id="fld-{{ f.name }}" name="{{ f.name }}" {% if f.required %}required{% endif %} {% if field_error %}aria-invalid="true" aria-describedby="error-{{ f.name }}"{% endif %}>{% for opt in f.options %}<option value="{{ opt[0] }}" {% if (values.get(f.name,'')|string)==opt[0] %}selected{% endif %}>{{ opt[1] }}</option>{% endfor %}</select>
-{% elif f.type=='textarea' %}
-<textarea name="{{ f.name }}" id="fld-{{ f.name }}" rows="5" maxlength="{{ f.maxlength }}" {% if f.required %}required{% endif %} {% if field_error %}aria-invalid="true" aria-describedby="error-{{ f.name }}"{% endif %}>{{ values.get(f.name,'') }}</textarea>
-{% else %}
-<input id="fld-{{ f.name }}" name="{{ f.name }}" type="{% if f.type in ['money','person_name','cedula','username'] %}text{% elif f.type=='phone' %}tel{% else %}{{ f.type }}{% endif %}" value="{% if f.type != 'password' %}{{ values.get(f.name,'') }}{% endif %}" maxlength="{{ f.maxlength }}" {% if f.pattern %}pattern="{{ f.pattern }}" title="{{ f.validation_message }}"{% endif %} {% if f.inputmode %}inputmode="{{ f.inputmode }}"{% endif %} {% if f.type=='money' %}inputmode="decimal" placeholder="0.00"{% endif %} {% if f.type=='password' %}autocomplete="new-password" minlength="{{ f.minlength }}"{% endif %} {% if f.required %}required{% endif %} {% if field_error %}aria-invalid="true" aria-describedby="error-{{ f.name }}"{% endif %}>
-{% endif %}
-{% if field_error %}<small class="field-error" id="error-{{ f.name }}" role="alert">{{ field_error }}</small>{% endif %}
+{% extends 'base.html' %}
+{% block title %}{{ form.title }}{% endblock %}
+{% block content %}
+
+<div class="heading-row">
+  <div>
+    <a class="back-link" href="{{ cancel }}">← Volver al módulo</a>
+    <h1>{{ 'Editar' if editing else form.title }}</h1>
+    <p>Complete los datos y guarde el registro.</p>
+  </div>
 </div>
-{% endfor %}</div><div class="form-actions"><a class="btn secondary" href="{{ cancel }}">Cancelar</a><button class="btn primary" type="submit">✓ Guardar registro</button></div></form></section>
-{% if form.kind=='actas' %}<p class="muted hint">Para adjuntar el PDF, abra el detalle de la reunión después de guardar el acta.</p>{% endif %}
+
+{% if error %}
+  <div class="notice danger">⚠ {{ error }}</div>
+{% endif %}
+
+{% set lookup_enabled = form.kind in ['multas', 'ingresos', 'deudas', 'marcaciones', 'asistencia'] and (socio_lookup|default([])) %}
+{% set field_errors = errors|default({}) %}
+
+{% if lookup_enabled %}
+  <div class="notice info">
+    Ingrese la <strong>Cédula</strong> o el <strong>Número de Unidad</strong> para cargar
+    automáticamente los datos del socio y del vehículo desde la base de datos.
+  </div>
+{% endif %}
+
+{% if form.kind == 'traspasos' %}
+  <div class="notice info">
+    Este traspaso cambia el propietario de la unidad y deja constancia de la venta
+    del bus con sus acciones y derechos. El nuevo socio no puede tener otra unidad activa.
+  </div>
+{% endif %}
+
+<section class="panel form-panel">
+  <form action="{% if editing %}/editar/{{ form.kind }}/{{ record_id }}{% else %}/nuevo/{{ form.kind }}{% endif %}" method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+    <div class="form-grid">
+      {% if lookup_enabled %}
+        <div class="field">
+          <label for="lookup-cedula">Cédula del socio</label>
+          <input id="lookup-cedula" name="lookup_cedula" type="text"
+                 list="list-cedulas" placeholder="Escriba o elija cédula..."
+                 value="{{ values.get('lookup_cedula', '') }}" autocomplete="off">
+          <datalist id="list-cedulas">
+            {% for s in socio_lookup %}
+              {% if s.cedula %}
+                <option value="{{ s.cedula }}">{{ s.name }} (Unidad: {{ s.unit_code or 'Sin unidad' }})</option>
+              {% endif %}
+            {% endfor %}
+          </datalist>
+        </div>
+
+        <div class="field">
+          <label for="lookup-unit">Número de unidad (Bus)</label>
+          <input id="lookup-unit" name="lookup_unit" type="text"
+                 list="list-unidades" placeholder="Escriba o elija unidad (ej: U-001)..."
+                 value="{{ values.get('lookup_unit', '') }}" autocomplete="off">
+          <datalist id="list-unidades">
+            {% for u in unit_lookup|default([]) %}
+              {% if u.unit_code %}
+                <option value="{{ u.unit_code }}">{{ u.socio_name }} (Placa: {{ u.plate or 'S/P' }})</option>
+              {% endif %}
+            {% endfor %}
+          </datalist>
+        </div>
+
+        {% set socio_error = field_errors.get('socio_id') %}
+        <div class="field{% if socio_error %} has-error{% endif %}">
+          <label for="auto-socio-name-display">Socio responsable (Automático) <span class="required">*</span></label>
+          <input type="text" id="auto-socio-name-display" readonly
+                 placeholder="Se autocompleta con Cédula o N° de Unidad..."
+                 value="" style="background:#f8fafc;cursor:default;">
+          <select id="fld-socio_id" name="socio_id" required
+                  style="{% if not socio_error %}display:none;{% endif %}margin-top:6px;"
+                  {% if socio_error %}aria-invalid="true" aria-describedby="error-socio_id"{% endif %}>
+            <option value="">-- Seleccionar socio manualmente --</option>
+            {% for f in form.fields %}
+              {% if f.name == 'socio_id' %}
+                {% for opt in f.options %}
+                  <option value="{{ opt[0] }}" {% if (values.get('socio_id','')|string) == (opt[0]|string) %}selected{% endif %}>{{ opt[1] }}</option>
+                {% endfor %}
+              {% endif %}
+            {% endfor %}
+          </select>
+          <small><a href="#" id="btn-toggle-manual-socio" style="color:#0d6efd;text-decoration:none;font-size:11px;">¿Elegir nombre de lista manual?</a></small>
+          {% if socio_error %}<small class="field-error" id="error-socio_id" role="alert">{{ socio_error }}</small>{% endif %}
+        </div>
+
+        {% if form.kind == 'multas' %}
+          {% set unit_error = field_errors.get('unit_id') %}
+          <div class="field{% if unit_error %} has-error{% endif %}">
+            <label for="display-vehicle-plate">Vehículo / Placa asignada</label>
+            <input type="text" id="display-vehicle-plate" readonly
+                   placeholder="Se autocompleta con Cédula o N° de Unidad..."
+                   value="" style="background:#f8fafc;cursor:default;">
+            <select id="fld-unit_id" name="unit_id"
+                    style="{% if not unit_error %}display:none;{% endif %}margin-top:6px;"
+                    {% if unit_error %}aria-invalid="true" aria-describedby="error-unit_id"{% endif %}>
+              <option value="">-- Sin unidad asignada --</option>
+              {% for f in form.fields %}
+                {% if f.name == 'unit_id' %}
+                  {% for opt in f.options %}
+                    <option value="{{ opt[0] }}" {% if (values.get('unit_id','')|string) == (opt[0]|string) %}selected{% endif %}>{{ opt[1] }}</option>
+                  {% endfor %}
+                {% endif %}
+              {% endfor %}
+            </select>
+            {% if unit_error %}<small class="field-error" id="error-unit_id" role="alert">{{ unit_error }}</small>{% endif %}
+          </div>
+        {% endif %}
+      {% endif %}
+
+      {% for f in form.fields %}
+        {% if not (lookup_enabled and (f.name == 'socio_id' or (form.kind == 'multas' and f.name == 'unit_id'))) %}
+          {% set field_error = field_errors.get(f.name) %}
+          <div class="field {% if f.type == 'textarea' %}full{% endif %}{% if field_error %} has-error{% endif %}">
+            <label for="fld-{{ f.name }}">
+              {{ f.label }}{% if f.required %} <span class="required">*</span>{% endif %}
+            </label>
+
+            {% if f.type == 'select' %}
+              <select id="fld-{{ f.name }}" name="{{ f.name }}"
+                      {% if f.required %}required{% endif %}
+                      {% if field_error %}aria-invalid="true" aria-describedby="error-{{ f.name }}"{% endif %}>
+                {% for opt in f.options %}
+                  <option value="{{ opt[0] }}" {% if (values.get(f.name,'')|string) == (opt[0]|string) %}selected{% endif %}>{{ opt[1] }}</option>
+                {% endfor %}
+              </select>
+
+            {% elif f.type == 'textarea' %}
+              <textarea id="fld-{{ f.name }}" name="{{ f.name }}" rows="5"
+                        maxlength="{{ f.maxlength|default(5000) }}"
+                        {% if f.required %}required{% endif %}
+                        {% if field_error %}aria-invalid="true" aria-describedby="error-{{ f.name }}"{% endif %}>{{ values.get(f.name,'') }}</textarea>
+
+            {% else %}
+              <input id="fld-{{ f.name }}" name="{{ f.name }}"
+                     type="{% if f.type in ['money', 'person_name', 'cedula', 'username'] %}text{% elif f.type == 'phone' %}tel{% else %}{{ f.type }}{% endif %}"
+                     value="{% if f.type != 'password' %}{{ values.get(f.name,'') }}{% endif %}"
+                     maxlength="{{ f.maxlength|default(200) }}"{% if f.pattern|default('') %} pattern="{{ f.pattern }}" title="{{ f.validation_message|default('') }}"{% endif %}
+                     {% if f.type == 'money' %}inputmode="decimal" placeholder="0.00"{% elif f.inputmode|default('') %}inputmode="{{ f.inputmode }}"{% endif %}
+                     {% if f.type == 'password' %}autocomplete="new-password" minlength="{{ f.minlength|default(12) }}"{% endif %}
+                     {% if f.required %}required{% endif %}
+                     {% if field_error %}aria-invalid="true" aria-describedby="error-{{ f.name }}"{% endif %}>
+            {% endif %}
+
+            {% if field_error %}
+              <small class="field-error" id="error-{{ f.name }}" role="alert">{{ field_error }}</small>
+            {% endif %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    {% if lookup_enabled %}
+      <div id="lookup-live-card" class="notice success" style="display:none;margin-top:16px;margin-bottom:0;">
+        ✓ <strong>Datos encontrados:</strong> <span id="card-socio-name">—</span> &nbsp;|&nbsp;
+        <b>Cédula:</b> <span id="card-socio-cedula">—</span> &nbsp;|&nbsp;
+        <b>Unidad:</b> <span id="card-unit-code">—</span> &nbsp;|&nbsp;
+        <b>Placa:</b> <span id="card-plate">—</span>
+      </div>
+    {% endif %}
+
+    <div class="form-actions">
+      <a class="btn secondary" href="{{ cancel }}">Cancelar</a>
+      <button class="btn primary" type="submit">✓ Guardar registro</button>
+    </div>
+  </form>
+</section>
+
+{% if form.kind == 'actas' %}
+  <p class="muted hint">Para adjuntar el PDF, abra el detalle de la reunión después de guardar el acta.</p>
+{% endif %}
+
+{% if socio_lookup_json|default('') %}
+  <script id="socio-lookup-data" type="application/json">{{ socio_lookup_json|safe }}</script>
+{% endif %}
+{% if unit_lookup_json|default('') %}
+  <script id="unit-lookup-data" type="application/json">{{ unit_lookup_json|safe }}</script>
+{% endif %}
 {% endblock %}

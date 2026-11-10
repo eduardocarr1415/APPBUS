@@ -573,3 +573,220 @@ def test_convocatoria_permissions_guard(environment):
         'notified_ids': [str(sid)]
     })
     assert forbidden.status_code == 403
+
+
+
+def test_auditoria_module_only_admin(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+
+    # 1. Unauthenticated cannot access /auditoria
+    anon_resp = c.get('/auditoria', follow_redirects=False)
+    assert anon_resp.status_code == 303
+    assert anon_resp.headers['location'] == '/login'
+
+    # 2. Socio cannot access /auditoria (Forbidden 403)
+    login(c, 'socio')
+    socio_resp = c.get('/auditoria')
+    assert socio_resp.status_code == 403
+
+    # 3. Vigilancia cannot access /auditoria (Forbidden 403)
+    assert post(c, '/logout').status_code == 303
+    login(c, 'vigilante')
+    vig_resp = c.get('/auditoria')
+    assert vig_resp.status_code == 403
+
+    # 4. Administrador can access /auditoria and all its tabs
+    assert post(c, '/logout').status_code == 303
+    login(c, 'admin')
+    admin_resp = c.get('/auditoria')
+    assert admin_resp.status_code == 200
+    assert 'Historial del sistema' in admin_resp.text
+    assert 'Todo el historial' in admin_resp.text
+    assert 'Inicios y accesos' in admin_resp.text
+    assert 'Operaciones' in admin_resp.text
+    assert 'Seguridad' in admin_resp.text
+
+    # Check subtabs
+    for tab in ['logins', 'operaciones', 'seguridad', 'todos']:
+        tab_resp = c.get(f'/auditoria?tab={tab}')
+        assert tab_resp.status_code == 200
+        assert 'Total eventos' in tab_resp.text
+        assert 'IP del dispositivo' in tab_resp.text
+
+
+def test_audit_logs_logins_and_system_events(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+
+    # 1. Failed login is recorded in audit with IP
+    token = csrf(c, '/login')
+    fail_resp = c.post('/login', data={'_csrf': token, 'username': 'admin', 'password': 'WrongPassword123!'}, follow_redirects=False)
+    assert fail_resp.status_code == 401
+    fail_audit = db.one("SELECT * FROM audit WHERE action='Intento fallido' ORDER BY id DESC LIMIT 1")
+    assert fail_audit is not None
+    assert 'admin' in fail_audit['summary']
+    assert fail_audit['ip_address'] is not None
+
+    # 2. Successful login is recorded with IP
+    token = csrf(c, '/login')
+    success_resp = c.post('/login', data={'_csrf': token, 'username': 'admin', 'password': 'SecurePass123456'}, follow_redirects=False)
+    assert success_resp.status_code == 303
+    login_audit = db.one("SELECT * FROM audit WHERE action='Inicio de sesión' ORDER BY id DESC LIMIT 1")
+    assert login_audit is not None
+    assert login_audit['user_id'] == aid
+    assert login_audit['ip_address'] is not None
+
+    # 3. Operation is recorded with summary and IP
+    r = post(c, '/nuevo/socios', {'name': 'Socio Auditoria', 'cedula': '1700000000', 'phone': '0999999999', 'email': 'auditoria@example.com', 'joined': date.today().isoformat(), 'notes': 'Test'})
+    assert r.status_code == 303
+    socio_audit = db.one("SELECT * FROM audit WHERE entity='socios' ORDER BY id DESC LIMIT 1")
+    assert socio_audit is not None
+    assert 'Socio Auditoria' in socio_audit['summary']
+    assert socio_audit['ip_address'] is not None
+
+    # 4. View in /auditoria?tab=logins shows IP del dispositivo column
+    audit_page = c.get('/auditoria?tab=logins')
+    assert audit_page.status_code == 200
+    assert 'IP del dispositivo' in audit_page.text
+    assert 'Inicio de sesión' in audit_page.text
+    assert 'Intento fallido' in audit_page.text
+
+
+def test_multas_pay_flow_and_pagadas_tab(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    login(c, 'admin')
+    today = date.today().isoformat()
+
+    # 1. Registrar una nueva multa
+    r = post(c, '/nuevo/multas', {
+        'socio_id': str(sid),
+        'unit_id': '',
+        'category': 'Atraso',
+        'reason': 'Atraso en turno matutino',
+        'occurred_at': today,
+        'amount': '35.00'
+    })
+    assert r.status_code == 303
+    fine = db.one("SELECT * FROM fines WHERE reason='Atraso en turno matutino'")
+    assert fine is not None
+    assert fine['status'] == 'Pendiente'
+
+    # 2. En la pestaña de pendientes aparece el botón de Pagar y el de Registrar multa
+    page_pend = c.get('/multas?tab=pendientes')
+    assert page_pend.status_code == 200
+    assert f'/multas/{fine["id"]}/pagar' in page_pend.text
+    assert 'Registrar multa' in page_pend.text
+
+    # 3. En la pestaña de pagadas NO aparece el botón de Registrar multa ni la multa pendiente
+    page_paid = c.get('/multas?tab=pagadas')
+    assert page_paid.status_code == 200
+    assert 'Registrar multa' not in page_paid.text
+    assert 'Atraso en turno matutino' not in page_paid.text
+
+    # 4. GET /multas/{id}/pagar muestra pantalla de cobro
+    get_pay = c.get(f'/multas/{fine["id"]}/pagar')
+    assert get_pay.status_code == 200
+    assert 'Cobrar y pagar multa' in get_pay.text
+    assert '35.00' in get_pay.text
+
+    # 5. POST /multas/{id}/pagar registra el pago
+    token = csrf(c, f'/multas/{fine["id"]}/pagar')
+    pay_resp = c.post(f'/multas/{fine["id"]}/pagar', data={
+        '_csrf': token,
+        'method': 'Transferencia',
+        'day': today,
+        'notes': 'Cobrado en ventanilla'
+    }, follow_redirects=False)
+    assert pay_resp.status_code == 303
+    assert '/multas?tab=pagadas' in pay_resp.headers['location']
+
+    # 6. Verificar en base de datos: estado Pagada, deuda saldada, pago registrado
+    f_updated = db.one('SELECT * FROM fines WHERE id=?', (fine['id'],))
+    assert f_updated['status'] == 'Pagada'
+    d_updated = db.one('SELECT * FROM debts WHERE fine_id=?', (fine['id'],))
+    assert d_updated['paid_cents'] == 3500
+    pay_record = db.one('SELECT * FROM payments WHERE debt_id=?', (d_updated['id'],))
+    assert pay_record is not None
+    assert pay_record['amount_cents'] == 3500
+    assert pay_record['method'] == 'Transferencia'
+
+    # 7. Ahora la multa aparece en /multas?tab=pagadas y NO hay botón de Registrar multa
+    page_paid_after = c.get('/multas?tab=pagadas')
+    assert page_paid_after.status_code == 200
+    assert 'Atraso en turno matutino' in page_paid_after.text
+    assert 'Registrar multa' not in page_paid_after.text
+
+    # 8. Módulo de vigilancia usa Multas y no Sanciones
+    vig_page = c.get('/vigilancia')
+    assert vig_page.status_code == 200
+    assert 'Multas del periodo' in vig_page.text
+    assert 'Sanciones' not in vig_page.text
+
+
+def test_configuracion_only_admin_and_saves_settings(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+
+    # 1. Unauthenticated cannot access /configuracion
+    anon_resp = c.get('/configuracion', follow_redirects=False)
+    assert anon_resp.status_code == 303
+    assert anon_resp.headers['location'] == '/login'
+
+    # 2. Socio cannot access /configuracion (Forbidden 403)
+    login(c, 'socio')
+    socio_resp = c.get('/configuracion')
+    assert socio_resp.status_code == 403
+
+    # 3. Vigilante cannot access /configuracion (Forbidden 403)
+    assert post(c, '/logout').status_code == 303
+    login(c, 'vigilante')
+    vig_resp = c.get('/configuracion')
+    assert vig_resp.status_code == 403
+
+    # 4. Administrador can access /configuracion
+    assert post(c, '/logout').status_code == 303
+    login(c, 'admin')
+    admin_resp = c.get('/configuracion')
+    assert admin_resp.status_code == 200
+    assert 'Configurar página' in admin_resp.text
+    assert 'cfg-company-name' in admin_resp.text
+    assert 'live-mockup-frame' in admin_resp.text
+    assert 'bus-transition-overlay' in admin_resp.text
+
+    # 5. Admin saves new settings
+    token = csrf(c, '/configuracion')
+    save_resp = c.post('/configuracion', data={
+        '_csrf': token,
+        'company_name': 'Cooperativa San Cristóbal',
+        'company_slogan': 'Rutas del Austro',
+        'primary_color': '#b91c1c',
+        'sidebar_color': '#1e293b',
+        'accent_color': '#f59e0b',
+        'font_family': 'Inter, system-ui, sans-serif',
+        'bus_animation': '1',
+        'animation_duration': '1.8',
+        'footer_text': 'Cooperativa San Cristóbal · 2026'
+    }, follow_redirects=False)
+    assert save_resp.status_code == 303
+
+    # Verify saved settings in database
+    s = db.get_settings()
+    assert s['company_name'] == 'Cooperativa San Cristóbal'
+    assert s['primary_color'] == '#b91c1c'
+    assert s['sidebar_color'] == '#1e293b'
+
+    # Verify audit log
+    audit_row = db.one("SELECT * FROM audit WHERE action='Configurar sistema' ORDER BY id DESC LIMIT 1")
+    assert audit_row is not None
+    assert audit_row['ip_address'] is not None
+
+    # Verify page reflects new settings
+    new_page = c.get('/configuracion')
+    assert 'Cooperativa San Cristóbal' in new_page.text
+
+    # 6. Admin can reset to defaults
+    token_reset = csrf(c, '/configuracion')
+    reset_resp = c.post('/configuracion/reset', data={'_csrf': token_reset}, follow_redirects=False)
+    assert reset_resp.status_code == 303
+    s_reset = db.get_settings()
+    assert s_reset['company_name'] == 'Compañía de Transportes Guaytacama'
+
+

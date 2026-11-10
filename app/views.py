@@ -7,10 +7,12 @@ NAV = [
  ('socios','/socios','♙','Socios','socios.ver'),
  ('actas','/actas','▤','Actas y reuniones','actas.ver'),
  ('finanzas','/finanzas','▥','Ingresos económicos','finanzas.ver'),
- ('multas','/multas','⚒','Multas y sanciones','multas.ver'),
+ ('multas','/multas','⚒','Multas','multas.ver'),
  ('unidades','/unidades','▣','Unidades y vehículos','unidades.ver'),
  ('reportes','/reportes','▥','Reportes','reportes.ver'),
  ('usuarios','/usuarios','♙','Usuarios y permisos','usuarios.ver'),
+ ('auditoria','/auditoria','⏱','Historial del sistema','auditoria.ver'),
+ ('configuracion','/configuracion','⚙','Configurar página','configuracion.ver'),
 ]
 TABS={
  'socios':[('listado','Socios'),('unidades','Unidades asignadas'),('traspasos','Historial de traspasos')],
@@ -20,12 +22,13 @@ TABS={
  'unidades':[('unidades','Unidades'),('vehiculos','Vehículos'),('cambios','Cambios de vehículo')],
  'reportes':[('resumen','Resumen'),('financieros','Finanzas y gestión'),('multas','Multas'),('asistencia','Asistencia'),('unidades','Unidades'),('cierre','Cierre anual de multas'),('historial','Historial de multas')],
  'usuarios':[('usuarios','Usuarios'),('roles','Roles'),('permisos','Permisos'),('auditoria','Auditoría')],
+ 'auditoria':[('todos','Todo el historial'),('logins','Inicios y accesos'),('operaciones','Operaciones'),('seguridad','Seguridad')],
 }
 TITLES={'socios':'Socios','actas':'Actas y reuniones','finanzas':'Ingresos económicos','multas':'Multas y sanciones','unidades':'Unidades y vehículos','reportes':'Reportes','usuarios':'Usuarios y permisos'}
 SUBTITLES={'socios':'Registro y administración de los socios de la compañía.',
 'actas':'Gestión de actas, reuniones, convocatorias y asistencia.',
 'finanzas':'Control de ingresos, pagos y deudas de la compañía.',
-'multas':'Registro y seguimiento de multas y sanciones.',
+'multas':'Registro, cobro y seguimiento de multas.',
 'unidades':'Control de vehículos, asignaciones y cambios de unidad.',
 'reportes':'Informes organizados por tema, con periodos y cierres de multas independientes.',
 'usuarios':'Gestión de usuarios, roles, permisos y auditoría.'}
@@ -101,10 +104,16 @@ def modules(db, key, tab, role_name='', socio_id=None):
         args=(socio_id,) if own else ()
         n=db.one('SELECT COUNT(*) n FROM fines f WHERE 1=1'+q,args)['n']
         pe=db.one("SELECT COUNT(*) n FROM fines f WHERE status='Pendiente'"+q,args)['n']
-        R['cards']=[card('Multas registradas',n,'⚒'),card('Pendientes',pe,'!','orange'),card('Pagadas',db.one("SELECT COUNT(*) n FROM fines f WHERE status='Pagada'"+q,args)['n'],'✓','green')]
-        mode='' if tab=='multas' else " AND f.status='Pendiente'" if tab=='pendientes' else " AND f.status='Pagada'"
-        settable('Listado de multas',['ID','Fecha','Socio','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id WHERE 1=1'''+q+mode+' ORDER BY f.id DESC LIMIT 150',args,lambda x:[x['id'],x['occurred_at'],x['name'],x['reason'],fmt(x['amount_cents']),x['status']])
-        R.update(new_kind='multas',new_label='Registrar multa')
+        pa=db.one("SELECT COUNT(*) n FROM fines f WHERE status='Pagada'"+q,args)['n']
+        R['cards']=[card('Multas registradas',n,'⚒'),card('Pendientes',pe,'!','orange' if pe else 'green'),card('Pagadas',pa,'✓','green')]
+        if tab=='pagadas':
+            settable('Listado de multas pagadas',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE f.status="Pagada" '''+q+' ORDER BY f.id DESC LIMIT 150',args,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
+        elif tab=='pendientes':
+            settable('Listado de multas pendientes',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE f.status="Pendiente" '''+q+' ORDER BY f.id DESC LIMIT 150',args,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
+            R.update(new_kind='multas',new_label='Registrar multa')
+        else:
+            settable('Listado de multas',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE 1=1'''+q+' ORDER BY f.id DESC LIMIT 150',args,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
+            R.update(new_kind='multas',new_label='Registrar multa')
     elif key=='unidades':
         R['cards']=[card('Unidades',db.one('SELECT COUNT(*) n FROM units')['n'],'▣'),card('Vehículos',db.one('SELECT COUNT(*) n FROM vehicles')['n'],'▣'),card('Cambios del periodo',db.one('SELECT COUNT(*) n FROM vehicle_changes WHERE period_id=?',(pid,))['n'],'⇄')]
         if tab=='vehiculos':
@@ -160,10 +169,90 @@ def modules(db, key, tab, role_name='', socio_id=None):
         if tab=='roles':
             settable('Roles existentes',['ID','Rol','Usuarios'],'''SELECT r.id,r.name,COUNT(u.id) FROM roles r LEFT JOIN users u ON u.role_id=r.id GROUP BY r.id ORDER BY r.id''')
         elif tab=='auditoria':
-            settable('Auditoría reciente',['Fecha','Usuario','Acción','Entidad','Detalle'],'''SELECT a.created_at,COALESCE(u.username,'Sistema'),a.action,a.entity,COALESCE(a.summary,'') FROM audit a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 100''')
+            settable('Auditoría reciente',['ID','Fecha y hora','IP del dispositivo','Usuario','Rol','Acción','Módulo','Detalle'],'''SELECT a.id,a.created_at,COALESCE(a.ip_address,'127.0.0.1'),COALESCE(u.username,'Sistema / Anónimo'),COALESCE(r.name,'—'),a.action,a.entity,COALESCE(a.summary,'') FROM audit a LEFT JOIN users u ON u.id=a.user_id LEFT JOIN roles r ON r.id=u.role_id ORDER BY a.id DESC LIMIT 150''')
         elif tab=='permisos':
             R.update(section='Permisos por rol',role_rows=db.all('SELECT * FROM roles ORDER BY id'))
         else:
             settable('Usuarios del sistema',['ID','Nombre','Usuario','Rol','Estado'],'''SELECT u.id,u.full_name,u.username,r.name,CASE WHEN u.active=1 THEN 'Activo' ELSE 'Inactivo' END FROM users u JOIN roles r ON r.id=u.role_id ORDER BY u.id DESC''')
             R.update(new_kind='usuarios',new_label='Nuevo usuario')
+    elif key=='auditoria':
+        total_ev = db.one('SELECT COUNT(*) n FROM audit')['n']
+        logins_ev = db.one("SELECT COUNT(*) n FROM audit WHERE entity='autenticacion' AND action IN ('Ingresar','Inicio de sesión')")['n']
+        fails_ev = db.one("SELECT COUNT(*) n FROM audit WHERE action IN ('Intento fallido','Bloqueo temporal')")['n']
+        last_ev = db.one('SELECT created_at FROM audit ORDER BY id DESC LIMIT 1')
+        last_time = last_ev['created_at'][11:19] if last_ev and len(last_ev['created_at'])>=19 else (last_ev['created_at'] if last_ev else '—')
+        R['cards'] = [
+            card('Total eventos', total_ev, '⏱', 'blue'),
+            card('Inicios de sesión', logins_ev, '✓', 'green'),
+            card('Alertas de acceso', fails_ev, '!', 'red' if fails_ev else 'purple'),
+            card('Último evento', last_time, '▦', 'blue'),
+        ]
+        if tab == 'logins':
+            settable('Historial de accesos e inicios de sesión',
+                     ['ID', 'Fecha y hora', 'IP del dispositivo', 'Usuario', 'Rol', 'Evento', 'Detalle'],
+                     '''SELECT a.id, a.created_at, COALESCE(a.ip_address, '127.0.0.1'),
+                               COALESCE(u.username, 'Sistema / Anónimo'),
+                               COALESCE(r.name, '—'), a.action, COALESCE(a.summary, '')
+                        FROM audit a
+                        LEFT JOIN users u ON u.id = a.user_id
+                        LEFT JOIN roles r ON r.id = u.role_id
+                        WHERE a.entity = 'autenticacion'
+                        ORDER BY a.id DESC LIMIT 300''')
+            R.update(side_rows=[
+                ('Módulo', 'Autenticación y accesos'),
+                ('Inicios de sesión', logins_ev),
+                ('Alertas / Intentos fallidos', fails_ev),
+                ('Seguridad', 'Registra dirección IP de conexión'),
+                ('Almacenamiento', 'Histórico permanente en SQLite')
+            ])
+        elif tab == 'operaciones':
+            settable('Historial de operaciones y cambios de datos',
+                     ['ID', 'Fecha y hora', 'IP del dispositivo', 'Usuario', 'Rol', 'Acción', 'Módulo', 'Detalle'],
+                     '''SELECT a.id, a.created_at, COALESCE(a.ip_address, '127.0.0.1'),
+                               COALESCE(u.username, 'Sistema'),
+                               COALESCE(r.name, '—'), a.action, a.entity, COALESCE(a.summary, '')
+                        FROM audit a
+                        LEFT JOIN users u ON u.id = a.user_id
+                        LEFT JOIN roles r ON r.id = u.role_id
+                        WHERE a.entity NOT IN ('autenticacion', 'usuarios', 'permisos')
+                        ORDER BY a.id DESC LIMIT 300''')
+            R.update(side_rows=[
+                ('Módulo', 'Operaciones y transacciones'),
+                ('Registra', 'Socios, unidades, buses, actas, pagos, deudas, multas'),
+                ('Trazabilidad', 'Identifica qué usuario realizó cada cambio'),
+                ('Detalle', 'Registra importes, nombres y motivos')
+            ])
+        elif tab == 'seguridad':
+            settable('Historial de seguridad y administración',
+                     ['ID', 'Fecha y hora', 'IP del dispositivo', 'Usuario', 'Rol', 'Acción', 'Detalle'],
+                     '''SELECT a.id, a.created_at, COALESCE(a.ip_address, '127.0.0.1'),
+                               COALESCE(u.username, 'Sistema'),
+                               COALESCE(r.name, '—'), a.action, COALESCE(a.summary, '')
+                        FROM audit a
+                        LEFT JOIN users u ON u.id = a.user_id
+                        LEFT JOIN roles r ON r.id = u.role_id
+                        WHERE a.entity IN ('usuarios', 'permisos') OR a.action LIKE '%clave%' OR a.action LIKE '%rol%' OR a.action LIKE '%permiso%' OR a.action LIKE '%estado%'
+                        ORDER BY a.id DESC LIMIT 300''')
+            R.update(side_rows=[
+                ('Módulo', 'Seguridad y privilegios'),
+                ('Registra', 'Cambios de contraseña, roles, permisos y estados'),
+                ('Protección', 'Solo accesible para el Administrador'),
+                ('Inviolabilidad', 'No modificable por otros usuarios')
+            ])
+        else:
+            settable('Registro general de auditoría',
+                     ['ID', 'Fecha y hora', 'IP del dispositivo', 'Usuario', 'Rol', 'Acción', 'Módulo', 'Detalle'],
+                     '''SELECT a.id, a.created_at, COALESCE(a.ip_address, '127.0.0.1'),
+                               COALESCE(u.username, 'Sistema / Anónimo'),
+                               COALESCE(r.name, '—'), a.action, a.entity, COALESCE(a.summary, '')
+                        FROM audit a
+                        LEFT JOIN users u ON u.id = a.user_id
+                        LEFT JOIN roles r ON r.id = u.role_id
+                        ORDER BY a.id DESC LIMIT 500''')
+            R.update(side_rows=[
+                ('Alcance', 'Todo lo que ocurre en el sistema'),
+                ('Base de datos', 'Registrado directamente en SQLite'),
+                ('Exclusivo', 'Visibilidad exclusiva para Administrador'),
+                ('Monitoreo', 'Trazabilidad completa en tiempo real')
+            ])
     return R
