@@ -3,7 +3,7 @@
 {% block content %}
 <div class="heading-row">
   <div>
-    <h1>⚙ Centro de Parametrización y Personalización del Sistema</h1>
+    <h1>Centro de Parametrización y Personalización del Sistema</h1>
     <p>Personalice completamente la plataforma: logos, imágenes, colores corporativos, tipografía, iconos de módulos, estilos de pestañas y animación.</p>
   </div>
 </div>
@@ -18,12 +18,12 @@
 
     <!-- Pestañas de categorías de configuración -->
     <div class="config-nav-tabs" role="tablist">
-      <button type="button" class="config-nav-btn active" data-target="sec-identidad">🏢 Identidad y Textos</button>
-      <button type="button" class="config-nav-btn" data-target="sec-logos">🖼️ Logos e Imágenes</button>
-      <button type="button" class="config-nav-btn" data-target="sec-colores">🎨 Colores y Estilo</button>
-      <button type="button" class="config-nav-btn" data-target="sec-pestanas">📑 Pestañas (Tabs)</button>
-      <button type="button" class="config-nav-btn" data-target="sec-iconos">🎛️ Iconos de Módulos</button>
-      <button type="button" class="config-nav-btn" data-target="sec-animacion">🚍 Animación del Bus</button>
+      <button type="button" class="config-nav-btn active" data-target="sec-identidad">Identidad y Textos</button>
+      <button type="button" class="config-nav-btn" data-target="sec-logos">Logos e Imágenes</button>
+      <button type="button" class="config-nav-btn" data-target="sec-colores">Colores y Estilo</button>
+      <button type="button" class="config-nav-btn" data-target="sec-pestanas">Pestañas (Tabs)</button>
+      <button type="button" class="config-nav-btn" data-target="sec-iconos">Iconos de Módulos</button>
+      <button type="button" class="config-nav-btn" data-target="sec-animacion">Animación del Bus</button>
     </div>
 
     <form id="config-form" action="/configuracion" method="post" enctype="multipart/form-data" class="form-stack">
@@ -33,7 +33,7 @@
       <!-- SECCIÓN 1: IDENTIDAD Y TEXTOS -->
       <div id="sec-identidad" class="config-section-panel active">
         <fieldset class="config-fieldset">
-          <legend>🏢 Identidad Institucional y Textos</legend>
+          <legend>Identidad Institucional y Textos</legend>
 
           <div class="field">
             <label for="cfg-company-name"><b>Nombre de la compañía o cooperativa</b> <span class="required">*</span></label>
@@ -68,7 +68,7 @@
       <!-- SECCIÓN 2: LOGOS, IMÁGENES Y FAVICON -->
       <div id="sec-logos" class="config-section-panel">
         <fieldset class="config-fieldset">
-          <legend>🖼️ Logos, Ilustraciones y Favicon</legend>
+          <legend>Logos, Ilustraciones y Favicon</legend>
           <p class="muted hint">Suba archivos desde su equipo (PNG, JPG, SVG, WebP o ICO hasta 4MB) o ingrese una ruta personalizada.</p>
 
           <div class="img-upload-grid">
@@ -83,7 +83,7 @@
               </div>
               <div class="img-upload-actions">
                 <label class="btn secondary small file-input-btn">
-                  📁 Subir logo
+                  Subir logo
                   <input type="file" id="cfg-header-logo-file" name="header_logo_file" accept=".png,.jpg,.jpeg,.svg,.webp,.ico">
                 </label>
               </div>
@@ -101,7 +101,7 @@
               </div>
               <div class="img-upload-actions">
                 <label class="btn secondary small file-input-btn">
-                  📁 Subir imagen
+                  Subir imagen
                   <input type="file" id="cfg-sidebar-banner-file" name="sidebar_banner_file" accept=".png,.jpg,.jpeg,.svg,.webp">
                 </label>
               </div>
@@ -119,7 +119,7 @@
               </div>
               <div class="img-upload-actions">
                 <label class="btn secondary small file-input-btn">
-                  📁 Subir icono
+                  Subir icono
                   <input type="file" id="cfg-favicon-file" name="favicon_file" accept=".ico,.svg,.png">
                 </label>
               </div>
@@ -137,7 +137,7 @@
               </div>
               <div class="img-upload-actions">
                 <label class="btn secondary small file-input-btn">
-                  📁 Subir fondo
+                  Subir fondo
                   <input type="file" id="cfg-login-banner-file" name="login_banner_file" accept=".png,.jpg,.jpeg,.svg,.webp">
                 </label>
               </div>
@@ -150,43 +150,43 @@
       <!-- SECCIÓN 3: COLORES Y APARIENCIA -->
       <div id="sec-colores" class="config-section-panel">
         <fieldset class="config-fieldset">
-          <legend>🎨 Paletas Transportistas Recomendadas (1 Clic)</legend>
+          <legend>Paletas Transportistas Recomendadas (1 Clic)</legend>
           <div class="preset-buttons">
             <button type="button" class="btn-preset" data-preset="guaytacama" data-primary="#1d4ed8" data-sidebar="#0f172a" data-accent="#f59e0b" data-bg="#f8fafc">
               <span class="preset-dot" style="background:#1d4ed8;"></span>
               <span class="preset-dot" style="background:#0f172a;"></span>
               <span class="preset-dot" style="background:#f59e0b;"></span>
-              🚍 Flota Guaytacama (Azul Real / Ámbar)
+              Flota Guaytacama (Azul Real / Ámbar)
             </button>
             <button type="button" class="btn-preset" data-preset="metro" data-primary="#b91c1c" data-sidebar="#1e293b" data-accent="#f59e0b" data-bg="#f8fafc">
               <span class="preset-dot" style="background:#b91c1c;"></span>
               <span class="preset-dot" style="background:#1e293b;"></span>
               <span class="preset-dot" style="background:#f59e0b;"></span>
-              🚌 Metro Ruta (Rojo / Carbón)
+              Metro Ruta (Rojo / Carbón)
             </button>
             <button type="button" class="btn-preset" data-preset="expreso" data-primary="#047857" data-sidebar="#064e3b" data-accent="#10b981" data-bg="#f0fdf4">
               <span class="preset-dot" style="background:#047857;"></span>
               <span class="preset-dot" style="background:#064e3b;"></span>
               <span class="preset-dot" style="background:#10b981;"></span>
-              🚎 Expreso Verde (Ecológico)
+              Expreso Verde (Ecológico)
             </button>
             <button type="button" class="btn-preset" data-preset="noche" data-primary="#6d28d9" data-sidebar="#09090b" data-accent="#eab308" data-bg="#faf5ff">
               <span class="preset-dot" style="background:#6d28d9;"></span>
               <span class="preset-dot" style="background:#09090b;"></span>
               <span class="preset-dot" style="background:#eab308;"></span>
-              🚐 Línea Nocturna (Púrpura / Oro)
+              Línea Nocturna (Púrpura / Oro)
             </button>
             <button type="button" class="btn-preset" data-preset="dark" data-primary="#3b82f6" data-sidebar="#050811" data-accent="#38bdf8" data-bg="#0f172a">
               <span class="preset-dot" style="background:#3b82f6;"></span>
               <span class="preset-dot" style="background:#050811;"></span>
               <span class="preset-dot" style="background:#38bdf8;"></span>
-              🌙 Dark Fleet (Modo Oscuro)
+              Modo Oscuro (Dark Fleet)
             </button>
           </div>
         </fieldset>
 
         <fieldset class="config-fieldset" style="margin-top:16px;">
-          <legend>🎨 Selector Personalizado de Colores</legend>
+          <legend>Selector Personalizado de Colores</legend>
 
           <div class="color-picker-grid">
             <div class="field color-field">
@@ -240,7 +240,7 @@
         </fieldset>
 
         <fieldset class="config-fieldset" style="margin-top:16px;">
-          <legend>📐 Bordes y Tipografía</legend>
+          <legend>Bordes y Tipografía</legend>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
             <div class="field">
@@ -268,14 +268,14 @@
       <!-- SECCIÓN 4: ESTILO DE PESTAÑAS (TABS) -->
       <div id="sec-pestanas" class="config-section-panel">
         <fieldset class="config-fieldset">
-          <legend>📑 Estilo de la Barra de Pestañas (Módulos)</legend>
+          <legend>Estilo de la Barra de Pestañas (Módulos)</legend>
           <p class="muted hint">Elija cómo se presentan las pestañas internas en cada módulo (Socios, Multas, Unidades, Finanzas, etc.):</p>
 
           <div class="tabs-style-grid">
             <!-- 1. Cápsula Flotante -->
             <div class="tabs-style-option {% if current_settings.tabs_style|default('capsule') == 'capsule' %}selected{% endif %}" data-style="capsule">
               <div class="tabs-style-title">
-                <span>💊 Cápsula Flotante (Recomendada)</span>
+                <span>Cápsula redondeada (Recomendada)</span>
               </div>
               <div class="tabs-style-preview" style="background:#fff;border:1px solid #dbeafe;border-radius:12px;padding:6px;box-shadow:0 3px 8px rgba(0,0,0,0.04);">
                 <span style="background:#1d4ed8;color:#fff;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;">Activa</span>
@@ -287,7 +287,7 @@
             <!-- 2. Subrayado Clásico -->
             <div class="tabs-style-option {% if current_settings.tabs_style == 'underline' %}selected{% endif %}" data-style="underline">
               <div class="tabs-style-title">
-                <span>━ Subrayado Clásico</span>
+                <span>Subrayado clásico</span>
               </div>
               <div class="tabs-style-preview" style="border-bottom:2px solid #e2e8f0;background:transparent;padding:4px 0;">
                 <span style="border-bottom:3px solid #1d4ed8;color:#1d4ed8;padding:4px 10px;font-size:11px;font-weight:700;">Activa</span>
@@ -299,7 +299,7 @@
             <!-- 3. Botones Píldora -->
             <div class="tabs-style-option {% if current_settings.tabs_style == 'pills' %}selected{% endif %}" data-style="pills">
               <div class="tabs-style-title">
-                <span>🔘 Botones Píldora</span>
+                <span>Botones tipo píldora</span>
               </div>
               <div class="tabs-style-preview" style="background:transparent;padding:4px 0;">
                 <span style="background:#1d4ed8;color:#fff;border-radius:9999px;padding:4px 12px;font-size:11px;font-weight:700;">Activa</span>
@@ -311,7 +311,7 @@
             <!-- 4. Barra Segmentada -->
             <div class="tabs-style-option {% if current_settings.tabs_style == 'segmented' %}selected{% endif %}" data-style="segmented">
               <div class="tabs-style-title">
-                <span>▥ Barra Segmentada</span>
+                <span>Barra segmentada</span>
               </div>
               <div class="tabs-style-preview" style="background:#e2e8f0;border-radius:8px;padding:4px;">
                 <span style="background:#fff;color:#1d4ed8;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,0.1);">Activa</span>
@@ -326,21 +326,21 @@
       <!-- SECCIÓN 5: ICONOS Y TÍTULOS DE MÓDULOS -->
       <div id="sec-iconos" class="config-section-panel">
         <fieldset class="config-fieldset">
-          <legend>🎛️ Personalización de Iconos y Títulos de Módulos</legend>
+          <legend>Personalización de Iconos y Títulos de Módulos</legend>
           <p class="muted hint">Personalice el icono y el nombre de cada módulo en la barra de navegación lateral:</p>
 
           <div class="module-icon-grid">
             {% set mod_list = [
-              ('dashboard', 'Dashboard', '▦', ['▦', '📊', '📈', '🏠', '📋']),
-              ('socios', 'Socios', '♙', ['♙', '👥', '👤', '🪪', '👔']),
-              ('actas', 'Actas y reuniones', '▤', ['▤', '📜', '📝', '📅', '🗂️']),
-              ('finanzas', 'Ingresos económicos', '▥', ['▥', '💰', '💳', '💵', '🏦']),
-              ('multas', 'Multas', '⚒', ['⚒', '⚖️', '⚑', '⚠️', '🚨']),
-              ('unidades', 'Unidades y vehículos', '▣', ['▣', '🚌', '🚍', '🚐', '🚘']),
-              ('reportes', 'Reportes', '📈', ['📈', '📊', '📑', '📄', '🖨️']),
-              ('usuarios', 'Usuarios y permisos', '👥', ['👥', '🔐', '🛡️', '🔑', '👤']),
-              ('auditoria', 'Historial del sistema', '⏱', ['⏱', '🛡️', '🔍', '📜', '🔒']),
-              ('configuracion', 'Configurar página', '⚙', ['⚙', '🛠️', '🎨', '🎛️', '🧰'])
+              ('dashboard', 'Dashboard', '▦', ['▦', '▧', '■', '◈', '▣']),
+              ('socios', 'Socios', '♙', ['♙', '♟', '▲', '●', '◈']),
+              ('actas', 'Actas y reuniones', '▤', ['▤', '≡', '§', '¶', '◻']),
+              ('finanzas', 'Ingresos económicos', '▥', ['▥', '$', '¢', '◈', '▦']),
+              ('multas', 'Multas', '⚒', ['⚒', '⚑', '!', '▲', '◆']),
+              ('unidades', 'Unidades y vehículos', '▣', ['▣', '◈', '■', '◉', '◎']),
+              ('reportes', 'Reportes', '▥', ['▥', '▤', '▦', '▲', '◈']),
+              ('usuarios', 'Usuarios y permisos', '♙', ['♙', '♟', '◎', '◈', '●']),
+              ('auditoria', 'Historial del sistema', '⏱', ['⏱', '⊙', '◷', '◈', '▤']),
+              ('configuracion', 'Configurar página', '⚙', ['⚙', '◈', '≡', '✦', '◼'])
             ] %}
 
             {% for mod_key, mod_default_title, mod_default_icon, suggestions in mod_list %}
@@ -364,7 +364,7 @@
       <!-- SECCIÓN 6: ANIMACIÓN DEL BUS -->
       <div id="sec-animacion" class="config-section-panel">
         <fieldset class="config-fieldset">
-          <legend>🚍 Animación del Bus en Navegación</legend>
+          <legend>Animación del Bus en Navegación</legend>
 
           <div class="field check-row">
             <input type="checkbox" id="cfg-bus-animation" name="bus_animation" value="1" {% if current_settings.bus_animation == '1' %}checked{% endif %}>
@@ -401,7 +401,7 @@
 
           <div style="margin-top:16px;">
             <button type="button" class="btn secondary small" id="btn-demo-bus-anim">
-              ▶ Probar animación del bus en vivo
+              Probar animación del bus en vivo
             </button>
           </div>
         </fieldset>
@@ -410,7 +410,7 @@
       <!-- BOTONES DE ACCIÓN PRINCIPALES -->
       <div class="form-actions" style="margin-top:24px;display:flex;gap:12px;align-items:center;">
         <button type="submit" class="btn primary" style="font-weight:700;padding:12px 26px;font-size:14.5px;">
-          ✓ Guardar y aplicar configuración
+          Guardar y aplicar configuración
         </button>
       </div>
     </form>
@@ -418,7 +418,7 @@
     <form action="/configuracion/reset" method="post" style="margin-top:20px;border-top:1px dashed #cbd5e1;padding-top:16px;">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
       <button type="submit" class="btn secondary small" data-confirm="¿Restaurar los valores y textos predeterminados de fábrica de Buses Guaytacama?">
-        ↺ Restaurar valores de fábrica
+        Restaurar valores de fábrica
       </button>
     </form>
   </section>
@@ -426,7 +426,7 @@
   <!-- Columna Derecha: VISTA PREVIA INTERACTIVA EN VIVO -->
   <aside class="panel config-preview-panel">
     <div class="panel-heading">
-      <h2>👁 Vista previa interactiva en vivo</h2>
+      <h2>Vista previa interactiva en vivo</h2>
       <span class="pill" id="preview-sync-status">Sincronizado en tiempo real</span>
     </div>
     <p class="muted hint" style="margin-bottom:14px;">
@@ -519,7 +519,7 @@
           <!-- Botones de muestra -->
           <div class="mockup-buttons">
             <button type="button" class="mockup-btn-primary" id="mockup-btn-primary">
-              ＋ Registrar nuevo bus
+              + Registrar nuevo bus
             </button>
             <button type="button" class="mockup-btn-secondary">
               Descargar reporte

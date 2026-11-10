@@ -310,8 +310,8 @@ class Database:
         'icon_finanzas': '▥',
         'icon_multas': '⚒',
         'icon_unidades': '▣',
-        'icon_reportes': '📈',
-        'icon_usuarios': '👥',
+        'icon_reportes': '▥',
+        'icon_usuarios': '♙',
         'icon_auditoria': '⏱',
         'icon_configuracion': '⚙',
 
