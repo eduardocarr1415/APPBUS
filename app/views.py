@@ -7,7 +7,7 @@ NAV = [
  ('socios','/socios','♙','Socios','socios.ver'),
  ('actas','/actas','▤','Actas y reuniones','actas.ver'),
  ('finanzas','/finanzas','▥','Ingresos económicos','finanzas.ver'),
- ('multas','/multas','⚒','Multas y sanciones','multas.ver'),
+ ('multas','/multas','⚒','Multas','multas.ver'),
  ('unidades','/unidades','▣','Unidades y vehículos','unidades.ver'),
  ('vigilancia','/vigilancia','♢','Vigilancia','vigilancia.ver'),
  ('reportes','/reportes','▥','Reportes','reportes.ver'),
@@ -20,18 +20,18 @@ TABS={
  'finanzas':[('resumen','Resumen'),('ingresos','Ingresos'),('pagos','Pagos'),('deudas','Deudas'),('marcaciones','Marcación semanal'),('historial','Historial')],
  'multas':[('multas','Multas'),('pendientes','Pendientes'),('pagadas','Pagadas')],
  'unidades':[('unidades','Unidades'),('vehiculos','Vehículos'),('cambios','Cambios de vehículo')],
- 'vigilancia':[('sanciones','Sanciones'),('historial','Historial de sanciones')],
+ 'vigilancia':[('multas','Multas del periodo'),('historial','Historial de multas')],
  'reportes':[('resumen','Resumen'),('financieros','Financieros'),('multas','Multas'),('asistencia','Asistencia'),('unidades','Unidades'),('cierre','Cierre anual'),('historial','Historial')],
  'usuarios':[('usuarios','Usuarios'),('roles','Roles'),('permisos','Permisos'),('auditoria','Auditoría')],
  'auditoria':[('todos','Todo el historial'),('logins','Inicios y accesos'),('operaciones','Operaciones'),('seguridad','Seguridad')],
 }
-TITLES={'socios':'Socios','actas':'Actas y reuniones','finanzas':'Ingresos económicos','multas':'Multas y sanciones','unidades':'Unidades y vehículos','vigilancia':'Consejo de vigilancia','reportes':'Reportes y cierre anual','usuarios':'Usuarios y permisos','auditoria':'Historial del sistema'}
+TITLES={'socios':'Socios','actas':'Actas y reuniones','finanzas':'Ingresos económicos','multas':'Multas','unidades':'Unidades y vehículos','vigilancia':'Consejo de vigilancia','reportes':'Reportes y cierre anual','usuarios':'Usuarios y permisos','auditoria':'Historial del sistema'}
 SUBTITLES={'socios':'Registro y administración de los socios de la compañía.',
 'actas':'Gestión de actas, reuniones, convocatorias y asistencia.',
 'finanzas':'Control de ingresos, pagos y deudas de la compañía.',
-'multas':'Registro y seguimiento de multas y sanciones.',
+'multas':'Registro, cobro y seguimiento de multas.',
 'unidades':'Control de vehículos, asignaciones y cambios de unidad.',
-'vigilancia':'Supervisión y control de sanciones disciplinarias y operativas.',
+'vigilancia':'Supervisión y control de multas y actividades operativas.',
 'reportes':'Informes administrativos y cierre del 25 de diciembre.',
 'usuarios':'Gestión de usuarios, roles, permisos y auditoría.',
 'auditoria':'Registro integral de auditoría, accesos al sistema y operaciones de usuarios.'}
@@ -107,10 +107,16 @@ def modules(db, key, tab, role_name='', socio_id=None):
         args=(socio_id,) if own else ()
         n=db.one('SELECT COUNT(*) n FROM fines f WHERE 1=1'+q,args)['n']
         pe=db.one("SELECT COUNT(*) n FROM fines f WHERE status='Pendiente'"+q,args)['n']
-        R['cards']=[card('Multas registradas',n,'⚒'),card('Pendientes',pe,'!','orange'),card('Pagadas',db.one("SELECT COUNT(*) n FROM fines f WHERE status='Pagada'"+q,args)['n'],'✓','green')]
-        mode='' if tab=='multas' else " AND f.status='Pendiente'" if tab=='pendientes' else " AND f.status='Pagada'"
-        settable('Listado de multas',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE 1=1'''+q+mode+' ORDER BY f.id DESC LIMIT 150',args,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
-        R.update(new_kind='multas',new_label='Registrar multa')
+        pa=db.one("SELECT COUNT(*) n FROM fines f WHERE status='Pagada'"+q,args)['n']
+        R['cards']=[card('Multas registradas',n,'⚒'),card('Pendientes',pe,'!','orange' if pe else 'green'),card('Pagadas',pa,'✓','green')]
+        if tab=='pagadas':
+            settable('Listado de multas pagadas',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE f.status="Pagada" '''+q+' ORDER BY f.id DESC LIMIT 150',args,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
+        elif tab=='pendientes':
+            settable('Listado de multas pendientes',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE f.status="Pendiente" '''+q+' ORDER BY f.id DESC LIMIT 150',args,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
+            R.update(new_kind='multas',new_label='Registrar multa')
+        else:
+            settable('Listado de multas',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE 1=1'''+q+' ORDER BY f.id DESC LIMIT 150',args,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
+            R.update(new_kind='multas',new_label='Registrar multa')
     elif key=='unidades':
         R['cards']=[card('Unidades',db.one('SELECT COUNT(*) n FROM units')['n'],'▣'),card('Vehículos',db.one('SELECT COUNT(*) n FROM vehicles')['n'],'▣'),card('Cambios del periodo',db.one('SELECT COUNT(*) n FROM vehicle_changes WHERE period_id=?',(pid,))['n'],'⇄')]
         if tab=='vehiculos':
@@ -130,16 +136,16 @@ def modules(db, key, tab, role_name='', socio_id=None):
         n_pend=db.one("SELECT COUNT(*) n FROM fines f WHERE f.status='Pendiente'"+q,args_all)['n']
         n_paid=db.one("SELECT COUNT(*) n FROM fines f WHERE f.status='Pagada'"+q,args_all)['n']
         R['cards']=[
-            card('Sanciones del periodo',n_period,'⚒','blue'),
-            card('Sanciones pendientes',n_pend,'!','orange' if n_pend else 'green'),
-            card('Sanciones pagadas',n_paid,'✓','green'),
+            card('Multas del periodo',n_period,'⚒','blue'),
+            card('Multas pendientes',n_pend,'!','orange' if n_pend else 'green'),
+            card('Multas pagadas',n_paid,'✓','green'),
         ]
         if tab=='historial':
-            settable('Historial de sanciones',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE 1=1'''+q+' ORDER BY f.id DESC LIMIT 200',args_all,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
-            R.update(new_kind='multas',new_label='Registrar sanción')
+            settable('Historial de multas',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE 1=1'''+q+' ORDER BY f.id DESC LIMIT 200',args_all,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
+            R.update(new_kind='multas',new_label='Registrar multa')
         else:
-            settable('Sanciones del periodo',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE f.period_id=?'''+q+' ORDER BY f.id DESC',args_period,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
-            R.update(new_kind='multas',new_label='Registrar sanción')
+            settable('Multas del periodo',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE f.period_id=?'''+q+' ORDER BY f.id DESC',args_period,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
+            R.update(new_kind='multas',new_label='Registrar multa')
     elif key=='reportes':
         R['cards']=[card('Periodo en curso',p['label'],'▦'),card('Fecha de cierre',p['ends'],'▤'),card('Reportes disponibles',len(REPORT_TYPES),'▥')]
         R.update(section='Reportes disponibles',report_types=REPORT_TYPES,periods=db.all('SELECT * FROM periods ORDER BY ends DESC'))

@@ -426,6 +426,62 @@ def create_app(db_path=None, testing=False):
             Database.audit(con,current(request)['id'],'Restablecer clave','usuarios',user_id,f"Clave temporal generada para el usuario '{u['username']}'", ip=ip)
         return render(request,'one_time_secret.html',active='usuarios',account=u['username'],secret=new_secret)
 
+    @app.get('/multas/{fine_id}/pagar')
+    def pay_fine_page(request:Request,fine_id:int):
+        if not (has(request,'multas.editar') or has(request,'finanzas.editar')):
+            raise HTTPException(403,'No tiene permisos para cobrar multas.')
+        fine=db.one('SELECT f.*,s.name AS socio_name,s.cedula AS socio_cedula,u.code AS unit_code FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE f.id=?',(fine_id,))
+        if not fine: raise HTTPException(404,'Multa no encontrada.')
+        if fine['status']!='Pendiente':
+            return redir('/multas',f'La multa #{fine_id} ya se encuentra en estado {fine["status"]}.')
+        debt=db.one('SELECT * FROM debts WHERE fine_id=?',(fine_id,))
+        pending=(debt['amount_cents']-debt['paid_cents']) if debt else fine['amount_cents']
+        return render(request,'pay_fine.html',active='multas',fine=fine,
+                      amount_fmt=fmt(pending),today=date.today().isoformat())
+
+    @app.post('/multas/{fine_id}/pagar')
+    async def pay_fine_action(request:Request,fine_id:int):
+        if not (has(request,'multas.editar') or has(request,'finanzas.editar')):
+            raise HTTPException(403,'No tiene permisos para cobrar multas.')
+        f=await csrf_check(request)
+        method=str(f.get('method','Efectivo')).strip()
+        if method not in ('Efectivo','Transferencia','Depósito'):
+            method='Efectivo'
+        pay_day=str(f.get('day',date.today().isoformat())).strip() or date.today().isoformat()
+        notes=str(f.get('notes','')).strip()
+        ip=client_ip(request)
+        uid=current(request)['id']
+        with db.connection() as con:
+            period=active_period_for_write(con)
+            fine=con.execute('SELECT * FROM fines WHERE id=?',(fine_id,)).fetchone()
+            if not fine or fine['status']!='Pendiente':
+                raise HTTPException(400,'Solo se pueden cobrar multas en estado Pendiente.')
+            debt=con.execute('SELECT * FROM debts WHERE fine_id=?',(fine_id,)).fetchone()
+            if not debt:
+                debt_id=con.execute(
+                    'INSERT INTO debts(period_id,socio_id,concept,amount_cents,issued,fine_id,created_by) VALUES(?,?,?,?,?,?,?)',
+                    (fine['period_id'],fine['socio_id'],'Multa: '+fine['reason'],fine['amount_cents'],fine['occurred_at'],fine_id,uid)
+                ).lastrowid
+                debt=con.execute('SELECT * FROM debts WHERE id=?',(debt_id,)).fetchone()
+
+            pending=debt['amount_cents']-debt['paid_cents']
+            if pending<=0:
+                con.execute("UPDATE fines SET status='Pagada' WHERE id=?",(fine_id,))
+                return redir('/multas?tab=pagadas',f'La multa #{fine_id} ya se encontraba saldada.')
+
+            pay_id=con.execute(
+                'INSERT INTO payments(period_id,debt_id,socio_id,amount_cents,method,day,created_by) VALUES(?,?,?,?,?,?,?)',
+                (period['id'],debt['id'],debt['socio_id'],pending,method,pay_day,uid)
+            ).lastrowid
+            con.execute('UPDATE debts SET paid_cents=paid_cents+? WHERE id=?',(pending,debt['id']))
+            con.execute("UPDATE fines SET status='Pagada' WHERE id=?",(fine_id,))
+            note_str=f" ({notes})" if notes else ""
+            Database.audit(con,uid,'Pagar multa','multas',fine_id,
+                           f"Cobro y pago de Multa #{fine_id} por {pending/100:.2f} S/ ({method}){note_str}", ip=ip)
+            Database.audit(con,uid,'Registrar','pagos',pay_id,
+                           f"Abono de {pending/100:.2f} S/ a deuda #{debt['id']} por multa #{fine_id} ({method}){note_str}", ip=ip)
+        return redir('/multas?tab=pagadas',f'Multa #{fine_id} pagada y registrada exitosamente.')
+
     @app.post('/multas/{fine_id}/anular')
     async def void_fine(request:Request,fine_id:int):
         permitted(request,'multas.editar');await csrf_check(request)
