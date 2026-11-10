@@ -3,7 +3,7 @@ import json
 import os
 import secrets
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from html import escape
 from pathlib import Path
 from urllib.parse import quote
@@ -70,7 +70,7 @@ def create_app(db_path=None, testing=False):
                 'reuniones':'/actas?tab=reuniones','actas':'/actas?tab=actas','convocatorias':'/actas?tab=convocatorias',
                 'asistencia':'/actas?tab=asistencia','ingresos':'/finanzas?tab=ingresos','pagos':'/finanzas?tab=pagos',
                 'deudas':'/finanzas?tab=deudas','marcaciones':'/finanzas?tab=marcaciones','multas':'/multas',
-                'vigilancia':'/vigilancia','usuarios':'/usuarios'}.get(kind,'/')
+                'usuarios':'/usuarios'}.get(kind,'/')
 
     async def csrf_check(request):
         fields=await request.form()
@@ -401,15 +401,39 @@ def create_app(db_path=None, testing=False):
         return FileResponse(str(file),filename=document['filename'],media_type=ALLOWED_UPLOADS.get(file.suffix,'.pdf'))
 
     @app.get('/reporte/{kind}.{format}')
-    def download_report(request:Request,kind:str,format:str,period_id:int=0):
+    def download_report(request:Request,kind:str,format:str,period_id:int=0,
+                        fine_cycle_id:int=0,month:str=''):
         permitted(request,'reportes.ver')
-        if kind in REPORT_TYPES:permitted(request,'reportes.'+kind)
+        if kind=='gerencia':
+            permitted(request,'reportes.general')
+        elif kind in REPORT_TYPES:
+            permitted(request,'reportes.'+kind)
         if kind not in REPORT_TYPES or format not in ('pdf','csv'):raise HTTPException(404,'Tipo de reporte no disponible.')
-        period=db.one('SELECT * FROM periods WHERE id=?',(period_id,)) if period_id else db.current_period()
-        if not period:raise HTTPException(404,'Periodo no encontrado.')
-        heads,rows=build_rows(db,kind,period['id'])
+        if kind=='multas':
+            cycle=db.one('SELECT * FROM fine_cycles WHERE id=?',(fine_cycle_id,)) if fine_cycle_id else db.current_fine_cycle()
+            if not cycle:raise HTTPException(404,'Ciclo de multas no encontrado.')
+            period={'id':cycle['id'],'label':cycle['label'],'starts':cycle['starts'],
+                    'ends':cycle['ends'] or date.today().isoformat()}
+            heads,rows=build_rows(db,kind,0,fine_cycle_id=cycle['id'])
+            filename=f'reporte_multas_{cycle["label"]}.{format}'
+        elif kind=='gerencia':
+            try:
+                month_date=date.fromisoformat(month+'-01')
+            except ValueError as exc:
+                raise HTTPException(400,'Seleccione un mes válido.') from exc
+            if month_date.strftime('%Y-%m')!=month:
+                raise HTTPException(400,'Seleccione un mes válido.')
+            next_month=(month_date.replace(day=28)+timedelta(days=4)).replace(day=1)
+            period={'starts':month_date.isoformat(),
+                    'ends':(next_month-timedelta(days=1)).isoformat()}
+            heads,rows=build_rows(db,kind,0,month=month)
+            filename=f'informe_gerencial_{month}.{format}'
+        else:
+            period=db.one('SELECT * FROM periods WHERE id=?',(period_id,)) if period_id else db.current_period()
+            if not period:raise HTTPException(404,'Periodo no encontrado.')
+            heads,rows=build_rows(db,kind,period['id'])
+            filename=f'reporte_{kind}_{period["label"]}.{format}'
         blob=as_pdf(REPORT_TYPES[kind],period,heads,rows) if format=='pdf' else as_csv(heads,rows)
-        filename=f'reporte_{kind}_{period["label"]}.{format}'
         med='application/pdf' if format=='pdf' else 'text/csv; charset=utf-8'
         return Response(blob,media_type=med,headers={'Content-Disposition':f'attachment; filename="{filename}"'})
 
@@ -417,20 +441,33 @@ def create_app(db_path=None, testing=False):
     async def close_year(request:Request):
         permitted(request,'cierres.ejecutar')
         f=await csrf_check(request)
-        currentp=db.current_period()
-        expected='CERRAR '+currentp['label']
+        cycle=db.current_fine_cycle()
+        try:
+            close_date=date.fromisoformat(str(f.get('close_date','')).strip())
+        except ValueError as exc:
+            raise HTTPException(400,'Seleccione una fecha de cierre válida.') from exc
+        if not date.fromisoformat(cycle['starts'])<=close_date<=date.today():
+            raise HTTPException(400,'La fecha de cierre debe estar entre el inicio del ciclo y hoy.')
+        expected='CERRAR '+cycle['label']
         if str(f.get('confirmacion','')).strip()!=expected:
             raise HTTPException(400,f'Para confirmar escriba exactamente: {expected}')
-        if date.today()<date.fromisoformat(currentp['ends']):
-            raise HTTPException(400,'El cierre real solo puede ejecutarse desde el 25 de diciembre. Mientras tanto puede descargar reportes de prueba.')
         with db.connection() as con:
-            p=con.execute('SELECT * FROM periods WHERE id=?',(currentp['id'],)).fetchone()
-            if not p or p['closed_at']:raise HTTPException(400,'El periodo ya está cerrado.')
-            headers,rows=build_rows(db,'general',p['id'])
-            snapshot=json.dumps(dict(zip([r[0] for r in rows],[r[1] for r in rows])),ensure_ascii=False)
-            con.execute('UPDATE periods SET closed_at=CURRENT_TIMESTAMP,closed_by=?,snapshot=? WHERE id=?',(current(request)['id'],snapshot,p['id']))
-            Database.audit(con,current(request)['id'],'Cerrar','periodos',p['id'],p['label'])
-        return redir('/reportes?tab=cierre','Cierre anual completado. Los datos históricos permanecen disponibles.')
+            current_cycle=con.execute('SELECT * FROM fine_cycles WHERE id=? AND closed_at IS NULL',(cycle['id'],)).fetchone()
+            if not current_cycle:raise HTTPException(400,'El ciclo de multas ya está cerrado.')
+            latest=con.execute('SELECT MAX(occurred_at) AS latest FROM fines WHERE fine_cycle_id=?',(cycle['id'],)).fetchone()['latest']
+            if latest and latest>close_date.isoformat():
+                raise HTTPException(400,'Hay multas con fecha posterior al cierre seleccionado. Elija una fecha que las incluya.')
+            totals=con.execute('''SELECT COUNT(*) AS count,COALESCE(SUM(amount_cents),0) AS total,
+                COALESCE(SUM(CASE WHEN status='Pendiente' THEN amount_cents ELSE 0 END),0) AS pending,
+                COALESCE(SUM(CASE WHEN status='Pagada' THEN amount_cents ELSE 0 END),0) AS paid
+                FROM fines WHERE fine_cycle_id=?''',(cycle['id'],)).fetchone()
+            snapshot=json.dumps(dict(totals),ensure_ascii=False)
+            con.execute('UPDATE fine_cycles SET ends=?,closed_at=CURRENT_TIMESTAMP,closed_by=?,snapshot=? WHERE id=?',
+                        (close_date.isoformat(),current(request)['id'],snapshot,cycle['id']))
+            Database.ensure_fine_cycle(con,close_date+timedelta(days=1))
+            Database.audit(con,current(request)['id'],'Cerrar ciclo de multas','ciclos_multas',cycle['id'],
+                           f"Ciclo {cycle['label']} cerrado al {close_date.isoformat()}; {totals['count']} multas.")
+        return redir('/reportes?tab=cierre','Ciclo de multas cerrado. El historial y sus totales se conservaron.')
 
     @app.get('/buscar')
     def search(request:Request,q:str=''):
@@ -599,7 +636,7 @@ def create_app(db_path=None, testing=False):
         # Keep this generic module route last among GET routes to avoid collisions.
         if module_name not in TABS: raise HTTPException(404,'Módulo no encontrado.')
         perm={'socios':'socios.ver','actas':'actas.ver','finanzas':'finanzas.ver','multas':'multas.ver',
-              'unidades':'unidades.ver','vigilancia':'vigilancia.ver','reportes':'reportes.ver','usuarios':'usuarios.ver'}[module_name]
+              'unidades':'unidades.ver','reportes':'reportes.ver','usuarios':'usuarios.ver'}[module_name]
         permitted(request,perm)
         if not tab or tab not in dict(TABS[module_name]): tab=TABS[module_name][0][0]
         u=current(request)
@@ -718,8 +755,10 @@ def create_app(db_path=None, testing=False):
                 default_notice=default_notice
             )
 
+        available_reports={k:v for k,v in REPORT_TYPES.items()
+                           if has(request,'reportes.general' if k=='gerencia' else 'reportes.'+k)}
         return render(request,'module.html',active=module_name,mod=module_name,tab=tab,
-                      tabs=TABS[module_name],title=TITLES[module_name],subtitle=SUBTITLES[module_name],data=data,fmt=fmt,available_reports={k:v for k,v in REPORT_TYPES.items() if has(request,'reportes.'+k)},
+                      tabs=TABS[module_name],title=TITLES[module_name],subtitle=SUBTITLES[module_name],data=data,fmt=fmt,available_reports=available_reports,
                       can_edit=has(request,'roles.editar'),can_close=has(request,'cierres.ejecutar'),**extra)
 
     return app

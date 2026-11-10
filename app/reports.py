@@ -11,15 +11,34 @@ from reportlab.lib.pagesizes import A4
 
 REPORT_TYPES = {
     'general':'Reporte general', 'finanzas':'Reporte financiero',
+    'gerencia':'Informe gerencial mensual',
     'deudas':'Reporte de deudas', 'multas':'Reporte de multas',
-    'asistencia':'Reporte de asistencia', 'unidades':'Reporte de unidades',
-    'vigilancia':'Reporte de vigilancia'
+    'asistencia':'Reporte de asistencia', 'unidades':'Reporte de unidades'
 }
 
 def fmt(cents):
     return f'S/ {int(cents or 0)/100:,.2f}'
 
-def build_rows(db, kind, period_id):
+def build_rows(db, kind, period_id, month=None, fine_cycle_id=None):
+    if kind=='gerencia':
+        if not month:
+            raise ValueError('Seleccione el mes del informe gerencial.')
+        income=db.one("SELECT COALESCE(SUM(amount_cents),0) AS total FROM incomes WHERE substr(day,1,7)=?",(month,))['total']
+        payments=db.one("SELECT COALESCE(SUM(amount_cents),0) AS total FROM payments WHERE substr(day,1,7)=?",(month,))['total']
+        debts=db.one("SELECT COALESCE(SUM(amount_cents),0) AS total FROM debts WHERE substr(issued,1,7)=?",(month,))['total']
+        fines=db.one("SELECT COUNT(*) AS count,COALESCE(SUM(amount_cents),0) AS total FROM fines WHERE substr(occurred_at,1,7)=?",(month,))
+        meetings=db.one("SELECT COUNT(*) AS count FROM meetings WHERE substr(meeting_date,1,7)=?",(month,))['count']
+        attendance=db.one('''SELECT COUNT(*) AS count FROM attendance a JOIN meetings m ON m.id=a.meeting_id
+            WHERE substr(m.meeting_date,1,7)=?''',(month,))['count']
+        return ['Indicador','Resultado'],[
+            ['Ingresos registrados',fmt(income)],
+            ['Abonos recibidos',fmt(payments)],
+            ['Deudas emitidas',fmt(debts)],
+            ['Multas registradas',str(fines['count'])],
+            ['Monto de multas registradas',fmt(fines['total'])],
+            ['Reuniones realizadas o programadas',str(meetings)],
+            ['Registros de asistencia',str(attendance)],
+        ]
     if kind == 'finanzas':
         income=db.all('SELECT i.day AS Fecha, i.concept AS Concepto, COALESCE(s.name,\'Compañía\') AS Socio, i.category AS Tipo, i.amount_cents AS Céntimos FROM incomes i LEFT JOIN socios s ON i.socio_id=s.id WHERE i.period_id=? ORDER BY i.day DESC',(period_id,))
         payment=db.all('SELECT p.day AS Fecha, d.concept AS Concepto, s.name AS Socio, \'Pago de deuda\' AS Tipo, p.amount_cents AS Céntimos FROM payments p JOIN debts d ON d.id=p.debt_id JOIN socios s ON s.id=p.socio_id WHERE p.period_id=? ORDER BY p.day DESC',(period_id,))
@@ -28,7 +47,10 @@ def build_rows(db, kind, period_id):
         rows=db.all('SELECT s.name AS Socio,d.concept AS Concepto,d.issued AS Fecha,d.amount_cents AS Total,d.paid_cents AS Abonado FROM debts d JOIN socios s ON s.id=d.socio_id WHERE d.period_id=? ORDER BY d.id DESC',(period_id,))
         return ['Socio','Concepto','Fecha','Total','Abonado','Pendiente'], [[r['Socio'],r['Concepto'],r['Fecha'],fmt(r['Total']),fmt(r['Abonado']),fmt(r['Total']-r['Abonado'])] for r in rows]
     if kind=='multas':
-        rows=db.all('SELECT f.occurred_at AS Fecha,s.name AS Socio,f.reason AS Motivo,f.category AS Tipo,f.amount_cents AS Monto,f.status AS Estado FROM fines f JOIN socios s ON s.id=f.socio_id WHERE f.period_id=? ORDER BY f.id DESC',(period_id,))
+        if fine_cycle_id is not None:
+            rows=db.all('SELECT f.occurred_at AS Fecha,s.name AS Socio,f.reason AS Motivo,f.category AS Tipo,f.amount_cents AS Monto,f.status AS Estado FROM fines f JOIN socios s ON s.id=f.socio_id WHERE f.fine_cycle_id=? ORDER BY f.occurred_at DESC,f.id DESC',(fine_cycle_id,))
+        else:
+            rows=db.all('SELECT f.occurred_at AS Fecha,s.name AS Socio,f.reason AS Motivo,f.category AS Tipo,f.amount_cents AS Monto,f.status AS Estado FROM fines f JOIN socios s ON s.id=f.socio_id WHERE f.period_id=? ORDER BY f.id DESC',(period_id,))
         return ['Fecha','Socio','Motivo','Tipo','Monto','Estado'], [[r['Fecha'],r['Socio'],r['Motivo'],r['Tipo'],fmt(r['Monto']),r['Estado']] for r in rows]
     if kind=='asistencia':
         rows=db.all('SELECT m.meeting_date AS Fecha,m.topic AS Reunión,s.name AS Socio,a.status AS Asistencia FROM attendance a JOIN meetings m ON m.id=a.meeting_id JOIN socios s ON s.id=a.socio_id WHERE m.meeting_date BETWEEN (SELECT starts FROM periods WHERE id=?) AND (SELECT ends FROM periods WHERE id=?) ORDER BY m.meeting_date DESC',(period_id,period_id))
@@ -36,9 +58,6 @@ def build_rows(db, kind, period_id):
     if kind=='unidades':
         rows=db.all('SELECT u.code AS Unidad,COALESCE(s.name,\'Sin asignar\') AS Socio,COALESCE(v.plate,\'Sin vehículo\') AS Placa,u.status AS Estado FROM units u LEFT JOIN socios s ON s.id=u.socio_id LEFT JOIN vehicles v ON v.id=u.vehicle_id ORDER BY u.code')
         return ['Unidad','Socio','Placa','Estado'],[[r[x] for x in ('Unidad','Socio','Placa','Estado')] for r in rows]
-    if kind=='vigilancia':
-        rows=db.all('SELECT v.day AS Fecha,v.category AS Tipo,v.details AS Detalle,COALESCE(s.name,\'\') AS Socio FROM vigilance v LEFT JOIN socios s ON s.id=v.socio_id WHERE v.period_id=? ORDER BY v.day DESC',(period_id,))
-        return ['Fecha','Tipo','Detalle','Socio'], [[r[x] for x in ('Fecha','Tipo','Detalle','Socio')] for r in rows]
     # general annual summary
     r=db.one('''SELECT
       (SELECT COALESCE(SUM(amount_cents),0) FROM incomes WHERE period_id=?) AS incomes,

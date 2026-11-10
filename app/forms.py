@@ -9,7 +9,7 @@ PERM_CREATE = {
  'socios':'socios.crear','traspasos':'socios.crear','vehiculos':'unidades.editar','unidades':'unidades.editar','cambios':'unidades.editar',
  'reuniones':'actas.editar','actas':'actas.editar','convocatorias':'actas.editar','asistencia':'actas.editar',
  'ingresos':'finanzas.editar','deudas':'finanzas.editar','pagos':'finanzas.editar','marcaciones':'finanzas.editar',
- 'multas':'multas.editar','vigilancia':'vigilancia.editar','usuarios':'usuarios.editar'
+ 'multas':'multas.editar','usuarios':'usuarios.editar'
 }
 
 class FormValidationError(ValueError):
@@ -83,8 +83,7 @@ def spec(db,kind):
      'pagos':('Registrar pago de deuda',[field('debt_id','Deuda pendiente','select',options=debts),field('amount','Monto abonado (S/)','money'),field('day','Fecha','date'),field('method','Medio de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
      'marcaciones':('Marcación semanal',[field('socio_id','Socio','select',options=socios),field('week_start','Fecha de semana','date'),field('concept','Concepto de marcación'),field('amount','Importe (S/)','money',False),field('state','Estado','select',options=[('Marcado','Marcado'),('Pendiente','Pendiente')])]),
      'multas':('Registrar multa',[field('socio_id','Socio o conductor','select',options=socios),field('unit_id','Unidad','select',False,[('','Sin asignar')]+unidades),field('category','Categoría','select',options=[('Atraso','Atraso'),('Minutos','Minutos'),('Radio','Radio'),('Trabajo','Trabajo'),('Otros','Otros')]),field('reason','Motivo de la multa'),field('occurred_at','Fecha','date'),field('amount','Monto (S/)','money')]),
-     'vigilancia':('Nuevo control de vigilancia',[field('day','Fecha','date'),field('socio_id','Socio','select',False,[('','Sin asignar')]+socios),field('unit_id','Unidad','select',False,[('','Sin unidad')]+unidades),field('category','Categoría','select',options=[('Control de trabajo','Control de trabajo'),('Atraso','Atraso'),('Radio','Radio'),('Ingreso','Ingreso'),('Otros','Otros')]),field('details','Descripción','textarea')]),
-     'usuarios':('Registrar usuario',[field('full_name','Nombre completo','person_name'),field('username','Usuario','username'),field('email','Correo','email',False),field('role_id','Rol','select',options=roles),field('socio_id','Socio vinculado','select',False,[('','No vinculado')]+socios),field('password','Contraseña (mínimo 12 caracteres)','password')]),
+     'usuarios':('Registrar usuario',[field('full_name','Nombre completo','person_name'),field('username','Usuario','username'),field('email','Correo','email',False),field('role_id','Rol','select',options=roles),field('socio_id','Socio vinculado','select',False,[('', 'No vinculado')]+socios),field('password','Contraseña (mínimo 12 caracteres)','password')]),
     }
     if kind not in S: raise ValueError('Tipo de registro desconocido.')
     return {'kind':kind,'title':S[kind][0],'fields':S[kind][1]}
@@ -123,12 +122,16 @@ def save(db, kind, data, uid, existing_id=None):
     def nullable(name):return int(v[name]) if v.get(name) else None
     with db.connection() as con:
         period=Database.ensure_period(con,date.today())
-        if kind not in ('socios','traspasos','vehiculos','unidades','reuniones','actas','convocatorias','asistencia','usuarios') and period['closed_at']:
+        if kind not in ('socios','traspasos','vehiculos','unidades','reuniones','actas','convocatorias','asistencia','usuarios','multas') and period['closed_at']:
             raise ValueError('No se puede registrar: el periodo está cerrado.')
         financial_date={'cambios':'changed_at','ingresos':'day','deudas':'issued','pagos':'day',
-                        'marcaciones':'week_start','multas':'occurred_at','vigilancia':'day'}.get(kind)
+                        'marcaciones':'week_start'}.get(kind)
         if financial_date and not (period['starts']<=v[financial_date]<=period['ends']):
             raise ValueError(f'La fecha debe estar dentro del periodo activo ({period["starts"]} a {period["ends"]}).')
+        fine_cycle=Database.ensure_fine_cycle(con,date.today()) if kind=='multas' else None
+        if fine_cycle and not (fine_cycle['starts']<=v['occurred_at']<=date.today().isoformat()):
+            raise FormValidationError('occurred_at',
+                f'La fecha de la multa debe estar entre {fine_cycle["starts"]} y hoy.')
         if existing_id is not None and kind not in ('socios','vehiculos','unidades','reuniones'):
             raise ValueError('Este tipo de registro se corrige mediante una nueva operación, no editando su historial.')
         if kind=='socios':
@@ -226,10 +229,8 @@ def save(db, kind, data, uid, existing_id=None):
             rid=con.execute('INSERT INTO weekly_marks(period_id,socio_id,week_start,concept,amount_cents,state,created_by) VALUES(?,?,?,?,?,?,?)',(period['id'],nullable('socio_id'),v['week_start'],v['concept'],v['amount'],v['state'],uid)).lastrowid
         elif kind=='multas':
             if not v['amount']: raise ValueError('La multa debe tener un monto mayor que cero.')
-            rid=con.execute('INSERT INTO fines(period_id,socio_id,unit_id,category,reason,occurred_at,amount_cents,created_by) VALUES(?,?,?,?,?,?,?,?)',(period['id'],nullable('socio_id'),nullable('unit_id'),v['category'],v['reason'],v['occurred_at'],v['amount'],uid)).lastrowid
+            rid=con.execute('INSERT INTO fines(period_id,socio_id,unit_id,category,reason,occurred_at,amount_cents,created_by,fine_cycle_id) VALUES(?,?,?,?,?,?,?,?,?)',(period['id'],nullable('socio_id'),nullable('unit_id'),v['category'],v['reason'],v['occurred_at'],v['amount'],uid,fine_cycle['id'])).lastrowid
             con.execute('INSERT INTO debts(period_id,socio_id,concept,amount_cents,issued,fine_id,created_by) VALUES(?,?,?,?,?,?,?)',(period['id'],nullable('socio_id'),'Multa: '+v['reason'],v['amount'],v['occurred_at'],rid,uid))
-        elif kind=='vigilancia':
-            rid=con.execute('INSERT INTO vigilance(period_id,socio_id,unit_id,category,details,day,created_by) VALUES(?,?,?,?,?,?,?)',(period['id'],nullable('socio_id'),nullable('unit_id'),v['category'],v['details'],v['day'],uid)).lastrowid
         elif kind=='usuarios':
             v['username']=valid_username(v['username'])
             if not password_valid(v['password']): raise ValueError('La contraseña debe tener entre 12 y 128 caracteres.')
