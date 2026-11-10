@@ -433,3 +433,77 @@ def test_convocatoria_permissions_guard(environment):
     })
     assert forbidden.status_code == 403
 
+
+def test_auditoria_module_only_admin(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+
+    # 1. Unauthenticated cannot access /auditoria
+    anon_resp = c.get('/auditoria', follow_redirects=False)
+    assert anon_resp.status_code == 303
+    assert anon_resp.headers['location'] == '/login'
+
+    # 2. Socio cannot access /auditoria (Forbidden 403)
+    login(c, 'socio')
+    socio_resp = c.get('/auditoria')
+    assert socio_resp.status_code == 403
+
+    # 3. Vigilancia cannot access /auditoria (Forbidden 403)
+    login(c, 'vigilante')
+    vig_resp = c.get('/auditoria')
+    assert vig_resp.status_code == 403
+
+    # 4. Administrador can access /auditoria and all its tabs
+    login(c, 'admin')
+    admin_resp = c.get('/auditoria')
+    assert admin_resp.status_code == 200
+    assert 'Historial del sistema' in admin_resp.text
+    assert 'Todo el historial' in admin_resp.text
+    assert 'Inicios y accesos' in admin_resp.text
+    assert 'Operaciones' in admin_resp.text
+    assert 'Seguridad' in admin_resp.text
+
+    # Check subtabs
+    for tab in ['logins', 'operaciones', 'seguridad', 'todos']:
+        tab_resp = c.get(f'/auditoria?tab={tab}')
+        assert tab_resp.status_code == 200
+        assert 'Total eventos' in tab_resp.text
+        assert 'IP del dispositivo' in tab_resp.text
+
+
+def test_audit_logs_logins_and_system_events(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+
+    # 1. Failed login is recorded in audit with IP
+    token = csrf(c, '/login')
+    fail_resp = c.post('/login', data={'_csrf': token, 'username': 'admin', 'password': 'WrongPassword123!'}, follow_redirects=False)
+    assert fail_resp.status_code == 401
+    fail_audit = db.one("SELECT * FROM audit WHERE action='Intento fallido' ORDER BY id DESC LIMIT 1")
+    assert fail_audit is not None
+    assert 'admin' in fail_audit['summary']
+    assert fail_audit['ip_address'] is not None
+
+    # 2. Successful login is recorded with IP
+    token = csrf(c, '/login')
+    success_resp = c.post('/login', data={'_csrf': token, 'username': 'admin', 'password': 'SecurePass123456'}, follow_redirects=False)
+    assert success_resp.status_code == 303
+    login_audit = db.one("SELECT * FROM audit WHERE action='Inicio de sesión' ORDER BY id DESC LIMIT 1")
+    assert login_audit is not None
+    assert login_audit['user_id'] == aid
+    assert login_audit['ip_address'] is not None
+
+    # 3. Operation is recorded with summary and IP
+    r = post(c, '/nuevo/socios', {'name': 'Socio Auditoria', 'cedula': '1700000000', 'phone': '0999999999', 'email': '', 'joined': date.today().isoformat(), 'notes': 'Test'})
+    assert r.status_code == 303
+    socio_audit = db.one("SELECT * FROM audit WHERE entity='socios' ORDER BY id DESC LIMIT 1")
+    assert socio_audit is not None
+    assert 'Socio Auditoria' in socio_audit['summary']
+    assert socio_audit['ip_address'] is not None
+
+    # 4. View in /auditoria?tab=logins shows IP del dispositivo column
+    audit_page = c.get('/auditoria?tab=logins')
+    assert audit_page.status_code == 200
+    assert 'IP del dispositivo' in audit_page.text
+    assert 'Inicio de sesión' in audit_page.text
+    assert 'Intento fallido' in audit_page.text
+
+

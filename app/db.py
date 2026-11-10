@@ -139,7 +139,8 @@ CREATE TABLE IF NOT EXISTS vigilance (
 );
 CREATE TABLE IF NOT EXISTS audit (
  id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id), action TEXT NOT NULL,
- entity TEXT NOT NULL, record_id INTEGER, summary TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ entity TEXT NOT NULL, record_id INTEGER, summary TEXT, ip_address TEXT DEFAULT '127.0.0.1',
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_incomes_period ON incomes(period_id,day);
 CREATE INDEX IF NOT EXISTS idx_payments_period ON payments(period_id,day);
@@ -181,6 +182,9 @@ class Database:
         with self.connection() as con:
             con.executescript(DDL)
             con.execute('PRAGMA journal_mode=WAL')
+            cols = [c[1] for c in con.execute('PRAGMA table_info(audit)').fetchall()]
+            if 'ip_address' not in cols:
+                con.execute("ALTER TABLE audit ADD COLUMN ip_address TEXT DEFAULT '127.0.0.1'")
             for name, ps in ROLES.items():
                 existing=con.execute('SELECT id FROM roles WHERE name=?',(name,)).fetchone()
                 if existing:
@@ -206,6 +210,6 @@ class Database:
             return self.ensure_period(con,date.today())
 
     @staticmethod
-    def audit(con, uid, action, entity, record_id=None, summary=''):
-        con.execute('INSERT INTO audit(user_id,action,entity,record_id,summary) VALUES(?,?,?,?,?)',
-                    (uid,action,entity,record_id,summary[:350]))
+    def audit(con, uid, action, entity, record_id=None, summary='', ip=None):
+        con.execute('INSERT INTO audit(user_id,action,entity,record_id,summary,ip_address) VALUES(?,?,?,?,?,?)',
+                    (uid,action,entity,record_id,summary[:350],ip or '127.0.0.1'))

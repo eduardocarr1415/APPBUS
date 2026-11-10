@@ -18,9 +18,9 @@ def options(db, sql):
     return [(str(a),str(b)) for a,b in [list(x.values())[:2] for x in db.all(sql)]]
 
 def spec(db,kind):
-    socios=options(db,"SELECT id,name FROM socios WHERE active=1 ORDER BY name")
+    socios=options(db,"SELECT id, name || CASE WHEN cedula IS NOT NULL AND cedula<>'' THEN ' · C.I: ' || cedula ELSE '' END FROM socios WHERE active=1 ORDER BY name")
     vehiculos=options(db,"SELECT id,plate FROM vehicles ORDER BY plate")
-    unidades=options(db,"SELECT id,code FROM units ORDER BY code")
+    unidades=options(db,"""SELECT u.id, u.code || ' · ' || COALESCE(s.name, 'Sin asignar') || CASE WHEN v.plate IS NOT NULL THEN ' (' || v.plate || ')' ELSE '' END FROM units u LEFT JOIN socios s ON s.id=u.socio_id LEFT JOIN vehicles v ON v.id=u.vehicle_id ORDER BY u.code""")
     transfer_units=options(db,"""SELECT u.id,u.code || ' · ' || s.name ||
         CASE WHEN v.plate IS NOT NULL THEN ' · ' || v.plate ELSE '' END
         FROM units u JOIN socios s ON s.id=u.socio_id
@@ -50,8 +50,24 @@ def spec(db,kind):
     if kind not in S: raise ValueError('Tipo de registro desconocido.')
     return {'kind':kind,'title':S[kind][0],'fields':S[kind][1]}
 
-def save(db, kind, data, uid, existing_id=None):
+def save(db, kind, data, uid, existing_id=None, ip=None):
     if kind not in PERM_CREATE: raise ValueError('Acción desconocida.')
+    data = dict(data)
+    # Resolución automática por cédula o número de unidad si no se envió socio_id
+    if kind in ('multas', 'ingresos', 'deudas', 'marcaciones', 'asistencia'):
+        ced = str(data.get('lookup_cedula') or data.get('cedula') or '').strip()
+        if ced and not data.get('socio_id'):
+            s_row = db.one('SELECT id FROM socios WHERE cedula=? AND active=1', (ced,))
+            if s_row: data['socio_id'] = str(s_row['id'])
+        u_val = str(data.get('lookup_unit') or data.get('unit_code') or '').strip()
+        if u_val:
+            u_row = db.one("SELECT id, socio_id FROM units WHERE code=? OR id=?", (u_val, u_val))
+            if u_row:
+                if not data.get('unit_id'): data['unit_id'] = str(u_row['id'])
+                if not data.get('socio_id') and u_row['socio_id']: data['socio_id'] = str(u_row['socio_id'])
+        if data.get('socio_id') and not data.get('unit_id'):
+            u_act = db.one("SELECT id FROM units WHERE socio_id=? AND status='Activa'", (data['socio_id'],))
+            if u_act: data['unit_id'] = str(u_act['id'])
     s=spec(db,kind)
     v={}
     for f in s['fields']:
@@ -131,7 +147,7 @@ def save(db, kind, data, uid, existing_id=None):
             con.execute('UPDATE units SET socio_id=? WHERE id=?',(buyer['id'],unit['id']))
             con.execute('UPDATE socios SET active=0 WHERE id=?',(unit['socio_id'],))
             Database.audit(con,uid,'Traspasar','traspasos',rid,
-                           f"Unidad {unit['code']}: {unit['seller']} → {buyer['name']} (bus, acciones y derechos)")
+                           f"Unidad {unit['code']}: {unit['seller']} → {buyer['name']} (bus, acciones y derechos)", ip=ip)
             return rid
         elif kind=='cambios':
             prev=con.execute('SELECT vehicle_id FROM units WHERE id=?',(v['unit_id'],)).fetchone()
@@ -189,5 +205,46 @@ def save(db, kind, data, uid, existing_id=None):
             if v['role_id']==str(con.execute("SELECT id FROM roles WHERE name='Socio'").fetchone()['id']) and not v['socio_id']:
                 raise ValueError('Los usuarios con rol Socio deben estar vinculados a un socio.')
             rid=con.execute('INSERT INTO users(username,full_name,email,password_hash,role_id,socio_id) VALUES(?,?,?,?,?,?)',(v['username'],v['full_name'],v['email'] or None,password_hash(v['password']),int(v['role_id']),nullable('socio_id'))).lastrowid
-        Database.audit(con,uid,'Editar' if existing_id else 'Crear',kind,rid)
+        action = 'Editar' if existing_id else 'Crear'
+        summary = ''
+        if kind == 'socios':
+            summary = f"Socio: {v.get('name')} (Cédula: {v.get('cedula') or 'S/C'})"
+        elif kind == 'vehiculos':
+            summary = f"Vehículo placa: {v.get('plate')} ({v.get('brand','')} {v.get('model','')})"
+        elif kind == 'unidades':
+            summary = f"Unidad: {v.get('code')} - Estado: {v.get('status')}"
+        elif kind == 'cambios':
+            summary = f"Cambio de vehículo para unidad ID {v.get('unit_id')} ({v.get('reason','')})"
+        elif kind == 'reuniones':
+            summary = f"Reunión: {v.get('type')} - {v.get('topic')} ({v.get('meeting_date')})"
+        elif kind == 'actas':
+            summary = f"Acta de reunión ID {rid} - Estado: {v.get('minutes_state')}"
+        elif kind == 'convocatorias':
+            summary = f"Convocatoria de reunión ID {rid}"
+        elif kind == 'asistencia':
+            summary = f"Asistencia individual registrada para reunión ID {rid}"
+        elif kind == 'ingresos':
+            amt_val = v.get('amount', 0)
+            amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)
+            summary = f"Ingreso de {amt_str} - {v.get('concept')} ({v.get('category')})"
+        elif kind == 'deudas':
+            amt_val = v.get('amount', 0)
+            amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)
+            summary = f"Deuda de {amt_str} - {v.get('concept')}"
+        elif kind == 'pagos':
+            amt_val = v.get('amount', 0)
+            amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)
+            summary = f"Abono de {amt_str} a deuda ID {v.get('debt_id')} ({v.get('method')})"
+        elif kind == 'marcaciones':
+            summary = f"Marcación semanal {v.get('week_start')} - {v.get('concept')} ({v.get('state')})"
+        elif kind == 'multas':
+            amt_val = v.get('amount', 0)
+            amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)
+            summary = f"Multa de {amt_str} - {v.get('reason')} ({v.get('category')})"
+        elif kind == 'vigilancia':
+            summary = f"Control vigilancia: {v.get('category')} - {str(v.get('details',''))[:60]}"
+        elif kind == 'usuarios':
+            summary = f"Usuario: {v.get('username')} ({v.get('full_name')})"
+
+        Database.audit(con, uid, action, kind, rid, summary, ip=ip)
         return rid
