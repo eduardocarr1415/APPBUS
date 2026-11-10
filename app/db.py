@@ -327,8 +327,8 @@ class Database:
         'title_auditoria': 'Historial del sistema',
         'title_configuracion': 'Configurar página',
 
-        # Animación del bus
-        'bus_animation': '1',
+        # Animación del bus (Desactivada por defecto para navegación inmediata sin esperas)
+        'bus_animation': '0',
         'animation_duration': '1.8',
         'bus_led_text': 'GUAYTACAMA',
         'bus_badge_tag': 'RUTA GUAYTACAMA',

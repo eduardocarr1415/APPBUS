@@ -310,36 +310,9 @@ document.addEventListener('DOMContentLoaded',()=>{
  }
 
  // ==========================================================================
- // ANIMACIÓN DE TRANSICIÓN: BUS CONDUCIENDO AL CAMBIAR DE MÓDULO (1.8s - 2.0s)
+ // NAVEGACIÓN INMEDIATA (Sin pantallas de carga ni esperas artificiales)
  // ==========================================================================
  const busOverlay = document.getElementById('bus-transition-overlay');
- const sideNavLinks = document.querySelectorAll('.side-nav a.nav-link');
- if (busOverlay && sideNavLinks.length) {
-  const destNameEl = document.getElementById('bus-destination-name');
-  const durationSec = parseFloat(busOverlay.dataset.duration || '1.8') || 1.8;
-  const durationMs = Math.round(durationSec * 1000);
-
-  sideNavLinks.forEach(link => {
-   link.addEventListener('click', function(e) {
-    if (this.classList.contains('active') || e.ctrlKey || e.metaKey || e.shiftKey) return;
-    const targetUrl = this.getAttribute('href');
-    if (!targetUrl || targetUrl.startsWith('#')) return;
-
-    e.preventDefault();
-    const destTitle = this.querySelector('span:last-child')?.textContent || 'Módulo';
-    if (destNameEl) destNameEl.textContent = 'Rumbo a ' + destTitle + '...';
-
-    busOverlay.style.display = 'flex';
-    requestAnimationFrame(() => {
-     busOverlay.classList.add('animating');
-    });
-
-    setTimeout(() => {
-     window.location.href = targetUrl;
-    }, durationMs);
-   });
-  });
- }
 
  // ==========================================================================
  // CONFIGURACIÓN Y VISTA PREVIA INTERACTIVA EN VIVO (LIVE PREVIEW EXTENDIDO)

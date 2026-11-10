@@ -79,7 +79,6 @@
   </div>
 </div>
 
-{% if settings.bus_animation|default('1') == '1' %}
 <div id="bus-transition-overlay" class="bus-transition-overlay" aria-hidden="true" style="display:none;" data-duration="{{ settings.animation_duration|default('1.8') }}">
   <div class="bus-transition-backdrop"></div>
   <div class="bus-stage-card">
@@ -256,7 +255,6 @@
     </div>
   </div>
 </div>
-{% endif %}
 {% else %}
 {% block auth %}{% endblock %}
 {% endif %}
