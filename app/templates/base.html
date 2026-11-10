@@ -83,7 +83,7 @@
 <div id="bus-transition-overlay" class="bus-transition-overlay" aria-hidden="true" style="display:none;" data-duration="{{ settings.animation_duration|default('1.8') }}">
   <div class="bus-transition-backdrop"></div>
   <div class="bus-stage-card">
-    <svg class="bus-animation-stage-svg" viewBox="0 0 540 180" width="100%" height="auto">
+    <svg class="bus-animation-stage-svg" viewBox="0 0 540 170" width="100%" height="auto">
       <defs>
         <!-- Night sky gradient -->
         <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
@@ -117,46 +117,32 @@
         </filter>
       </defs>
 
-      <!-- Sky Background -->
-      <rect x="0" y="0" width="540" height="122" rx="14" fill="url(#skyGrad)"/>
+      <!-- Night Sky Background (Full height, clean ambient scenery) -->
+      <rect x="0" y="0" width="540" height="170" rx="16" fill="url(#skyGrad)"/>
 
-      <!-- Stars -->
-      <circle cx="80" cy="25" r="1.2" fill="#ffffff" opacity="0.8"/>
-      <circle cx="160" cy="18" r="1.5" fill="#fef08a" opacity="0.9"/>
-      <circle cx="270" cy="30" r="1" fill="#ffffff" opacity="0.7"/>
-      <circle cx="420" cy="22" r="1.3" fill="#ffffff" opacity="0.85"/>
+      <!-- Ambient Stars -->
+      <circle cx="70" cy="22" r="1.2" fill="#ffffff" opacity="0.8"/>
+      <circle cx="150" cy="18" r="1.5" fill="#fef08a" opacity="0.9"/>
+      <circle cx="260" cy="28" r="1.1" fill="#ffffff" opacity="0.7"/>
+      <circle cx="390" cy="20" r="1.3" fill="#ffffff" opacity="0.85"/>
+      <circle cx="490" cy="30" r="1.2" fill="#ffffff" opacity="0.75"/>
 
-      <!-- Andes / Cotopaxi Silhouette -->
-      <polygon points="20,122 100,60 180,122" fill="#1e293b" opacity="0.45"/>
-      <polygon points="140,122 240,42 340,122" fill="#334155" opacity="0.55"/>
+      <!-- Andes / Cotopaxi Silhouette in background -->
+      <polygon points="0,170 80,95 160,170" fill="#1e293b" opacity="0.35"/>
+      <polygon points="120,170 230,70 340,170" fill="#334155" opacity="0.45"/>
       <!-- Snow peak of Cotopaxi -->
-      <polygon points="220,58 240,42 260,58 249,64 240,60 231,64" fill="#f8fafc" opacity="0.85"/>
-      <polygon points="300,122 400,68 500,122" fill="#1e293b" opacity="0.45"/>
+      <polygon points="210,86 230,70 250,86 239,92 230,88 221,92" fill="#f8fafc" opacity="0.85"/>
+      <polygon points="300,170 410,100 520,170" fill="#1e293b" opacity="0.35"/>
 
-      <!-- Highway Road Surface (Starts at horizon y=122, extends to y=180) -->
-      <rect x="0" y="122" width="540" height="58" fill="#0c1322"/>
-      <line x1="0" y1="122" x2="540" y2="122" stroke="#475569" stroke-width="2"/>
-      <line x1="0" y1="125" x2="540" y2="125" stroke="#ffffff" stroke-width="1.8" stroke-dasharray="24 16" opacity="0.45"/>
+      <!-- Headlight beam illuminating the forward path -->
+      <polygon points="460,105 540,88 540,135 460,118" fill="url(#headlightCone)"/>
 
-      <!-- Fast Moving Yellow Dashed Highway Lane Lines (in front of bus at y=165) -->
-      <g class="animated-highway-lines">
-        <line x1="-120" y1="165" x2="660" y2="165" stroke="#facc15" stroke-width="4" stroke-dasharray="36 24"/>
-      </g>
+      <!-- THE BUS: Centered harmoniously in the stage without artificial road lines -->
+      <g class="animated-bus-group">
+        <!-- Soft ambient chassis shadow -->
+        <ellipse cx="275" cy="140" rx="185" ry="6" fill="#000000" opacity="0.3" filter="url(#busGlow)"/>
 
-      <!-- THE BUS: Positioned realistically in the center of the asphalt driving lane -->
-      <g transform="translate(0, 14)">
-        <!-- Headlight beam illuminating the road -->
-        <polygon points="460,118 540,105 540,145 460,124" fill="url(#headlightCone)"/>
-
-        <g class="animated-bus-group">
-          <!-- Heavy contact tire patches (grounding the bus solidly on asphalt) -->
-          <ellipse cx="405" cy="135" rx="16" ry="2.2" fill="#000000" opacity="0.95"/>
-          <ellipse cx="175" cy="135" rx="16" ry="2.2" fill="#000000" opacity="0.95"/>
-          <ellipse cx="135" cy="135" rx="16" ry="2.2" fill="#000000" opacity="0.95"/>
-          <!-- Broad chassis shadow on the pavement -->
-          <ellipse cx="275" cy="135" rx="195" ry="4.5" fill="#000000" opacity="0.85"/>
-
-          <!-- Main Aerodynamic Coach Body -->
+        <!-- Main Aerodynamic Coach Body -->
         <path d="M 90 52 Q 100 44 125 44 L 415 44 Q 442 44 456 60 L 472 95 Q 476 106 473 118 L 90 118 Q 82 118 82 108 L 82 62 Q 82 52 90 52 Z" fill="url(#busPaintGrad)"/>
 
         <!-- Roof AC pod & spoiler -->
@@ -259,7 +245,6 @@
           </g>
           <circle cx="0" cy="0" r="4.5" fill="#475569"/>
           <circle cx="0" cy="0" r="1.8" fill="#f8fafc"/>
-        </g>
         </g>
       </g>
     </svg>
