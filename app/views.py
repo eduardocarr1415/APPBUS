@@ -13,6 +13,7 @@ NAV = [
  ('reportes','/reportes','▥','Reportes','reportes.ver'),
  ('usuarios','/usuarios','♙','Usuarios y permisos','usuarios.ver'),
  ('auditoria','/auditoria','⏱','Historial del sistema','auditoria.ver'),
+ ('configuracion','/configuracion','⚙','Configurar página','configuracion.ver'),
 ]
 TABS={
  'socios':[('listado','Socios'),('unidades','Unidades asignadas'),('traspasos','Historial de traspasos')],

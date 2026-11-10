@@ -56,7 +56,7 @@ def create_app(db_path=None, testing=False):
                 'nav':[{'key':k,'url':url,'icon':icon,'title':label} for k,url,icon,label,p in NAV if not p or has(request,p)],
                 'active':more.get('active',''),'ok':request.query_params.get('ok','')[:160],
                 'perms':getattr(request.state,'perms',set()),'year':date.today().year,
-                'period':db.current_period(),**more}
+                'period':db.current_period(),'settings':db.get_settings(),**more}
 
     def render(request, template, status_code=200,**more):
         return TEMPLATES.TemplateResponse(request,template,context(request,**more),status_code=status_code)
@@ -733,6 +733,52 @@ def create_app(db_path=None, testing=False):
             return JSONResponse({'ok': True, 'message': 'Convocatoria y notificaciones guardadas correctamente.', 'meeting_id': meeting_id})
 
         return redir(f'/actas?tab=convocatorias&meeting_id={meeting_id}', 'Convocatoria y notificaciones guardadas correctamente.')
+
+    @app.get('/configuracion')
+    def configuracion_page(request:Request):
+        permitted(request, 'configuracion.ver')
+        if current(request)['role'] != 'Administrador':
+            raise HTTPException(403, 'Apartado reservado exclusivamente para el Administrador.')
+        curr_settings = db.get_settings()
+        return render(request, 'configuracion.html', active='configuracion',
+                      current_settings=curr_settings)
+
+    @app.post('/configuracion')
+    async def configuracion_save(request:Request):
+        permitted(request, 'configuracion.ver')
+        if current(request)['role'] != 'Administrador':
+            raise HTTPException(403, 'Apartado reservado exclusivamente para el Administrador.')
+        f = await csrf_check(request)
+        new_s = {
+            'company_name': str(f.get('company_name', '')).strip()[:100] or 'Cooperativa de Transportes BusGestión',
+            'company_slogan': str(f.get('company_slogan', '')).strip()[:150] or 'Línea Interprovincial y Urbana · Control de Flota',
+            'primary_color': str(f.get('primary_color', '#1d4ed8')).strip()[:20],
+            'sidebar_color': str(f.get('sidebar_color', '#0f172a')).strip()[:20],
+            'accent_color': str(f.get('accent_color', '#f59e0b')).strip()[:20],
+            'font_family': str(f.get('font_family', 'Inter, system-ui, sans-serif')).strip()[:80],
+            'bus_animation': '1' if f.get('bus_animation') else '0',
+            'animation_duration': str(f.get('animation_duration', '1.8')).strip()[:10],
+            'footer_text': str(f.get('footer_text', '')).strip()[:150] or 'BusGestión · Sistema Operativo de Flota y Pasajeros'
+        }
+        db.update_settings(new_s)
+        ip = client_ip(request)
+        with db.connection() as con:
+            Database.audit(con, current(request)['id'], 'Configurar sistema', 'sistema', None,
+                           f"Personalización visual y de empresa actualizada (Color: {new_s['primary_color']}, Animación: {new_s['bus_animation']})", ip=ip)
+        return redir('/configuracion', 'Configuración de página guardada y aplicada correctamente.')
+
+    @app.post('/configuracion/reset')
+    async def configuracion_reset(request:Request):
+        permitted(request, 'configuracion.ver')
+        if current(request)['role'] != 'Administrador':
+            raise HTTPException(403, 'Apartado reservado exclusivamente para el Administrador.')
+        await csrf_check(request)
+        db.reset_settings()
+        ip = client_ip(request)
+        with db.connection() as con:
+            Database.audit(con, current(request)['id'], 'Restablecer configuración', 'sistema', None,
+                           "Se restauraron los colores y textos predeterminados de fábrica", ip=ip)
+        return redir('/configuracion', 'Se han restaurado los valores predeterminados de fábrica.')
 
     @app.get('/{module_name}')
     def module_page(request:Request,module_name:str,tab:str=''):

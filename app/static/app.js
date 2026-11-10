@@ -308,4 +308,139 @@ document.addEventListener('DOMContentLoaded',()=>{
    if (initMatch) applyMatch(initMatch, 'init');
   }
  }
+
+ // ==========================================================================
+ // ANIMACIÓN DE TRANSICIÓN: BUS CONDUCIENDO AL CAMBIAR DE MÓDULO (1.8s - 2.0s)
+ // ==========================================================================
+ const busOverlay = document.getElementById('bus-transition-overlay');
+ const sideNavLinks = document.querySelectorAll('.side-nav a.nav-link');
+ if (busOverlay && sideNavLinks.length) {
+  const destNameEl = document.getElementById('bus-destination-name');
+  const durationSec = parseFloat(busOverlay.dataset.duration || '1.8') || 1.8;
+  const durationMs = Math.round(durationSec * 1000);
+
+  sideNavLinks.forEach(link => {
+   link.addEventListener('click', function(e) {
+    if (this.classList.contains('active') || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const targetUrl = this.getAttribute('href');
+    if (!targetUrl || targetUrl.startsWith('#')) return;
+
+    e.preventDefault();
+    const destTitle = this.querySelector('span:last-child')?.textContent || 'Módulo';
+    if (destNameEl) destNameEl.textContent = 'Rumbo a ' + destTitle + '...';
+
+    busOverlay.style.display = 'flex';
+    requestAnimationFrame(() => {
+     busOverlay.classList.add('animating');
+    });
+
+    setTimeout(() => {
+     window.location.href = targetUrl;
+    }, durationMs);
+   });
+  });
+ }
+
+ // ==========================================================================
+ // CONFIGURACIÓN Y VISTA PREVIA INTERACTIVA EN VIVO (LIVE PREVIEW)
+ // ==========================================================================
+ const configForm = document.getElementById('config-form');
+ if (configForm) {
+  const inCompanyName = document.getElementById('cfg-company-name');
+  const inCompanySlogan = document.getElementById('cfg-company-slogan');
+  const inFooterText = document.getElementById('cfg-footer-text');
+  const inPrimaryColor = document.getElementById('cfg-primary-color');
+  const inPrimaryHex = document.getElementById('cfg-primary-hex');
+  const inSidebarColor = document.getElementById('cfg-sidebar-color');
+  const inSidebarHex = document.getElementById('cfg-sidebar-hex');
+  const inAccentColor = document.getElementById('cfg-accent-color');
+  const inAccentHex = document.getElementById('cfg-accent-hex');
+  const inFontFamily = document.getElementById('cfg-font-family');
+
+  const mockBrandTitle = document.getElementById('mockup-brand-title');
+  const mockBrandSlogan = document.getElementById('mockup-brand-slogan');
+  const mockFooterText = document.getElementById('mockup-footer-text');
+  const mockSidebar = document.getElementById('mockup-sidebar');
+  const mockBtnPrimary = document.getElementById('mockup-btn-primary');
+  const mockAvatar = document.getElementById('mockup-avatar');
+  const mockNavActive = document.getElementById('mockup-nav-active');
+  const mockCardAccent = document.getElementById('mockup-card-accent');
+  const mockFrame = document.getElementById('live-mockup-frame');
+  const btnDemoAnim = document.getElementById('btn-demo-bus-anim');
+
+  function updateMockup() {
+   if (mockBrandTitle && inCompanyName) mockBrandTitle.textContent = inCompanyName.value || 'BusGestión';
+   if (mockBrandSlogan && inCompanySlogan) mockBrandSlogan.textContent = inCompanySlogan.value || '';
+   if (mockFooterText && inFooterText) mockFooterText.textContent = inFooterText.value || '';
+
+   const primary = inPrimaryColor ? inPrimaryColor.value : '#1d4ed8';
+   const sidebar = inSidebarColor ? inSidebarColor.value : '#0f172a';
+   const accent = inAccentColor ? inAccentColor.value : '#f59e0b';
+
+   if (mockSidebar) mockSidebar.style.background = sidebar;
+   if (mockBtnPrimary) mockBtnPrimary.style.background = primary;
+   if (mockAvatar) mockAvatar.style.background = primary;
+   if (mockNavActive) mockNavActive.style.borderLeftColor = accent;
+   if (mockCardAccent) mockCardAccent.style.color = accent;
+   if (mockFrame && inFontFamily) mockFrame.style.fontFamily = inFontFamily.value;
+  }
+
+  function bindColorPair(colorInput, hexInput) {
+   if (!colorInput || !hexInput) return;
+   colorInput.addEventListener('input', () => {
+    hexInput.value = colorInput.value.toUpperCase();
+    updateMockup();
+   });
+   hexInput.addEventListener('input', () => {
+    let val = hexInput.value.trim();
+    if (!val.startsWith('#')) val = '#' + val;
+    if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+     colorInput.value = val;
+     updateMockup();
+    }
+   });
+  }
+
+  bindColorPair(inPrimaryColor, inPrimaryHex);
+  bindColorPair(inSidebarColor, inSidebarHex);
+  bindColorPair(inAccentColor, inAccentHex);
+
+  if (inCompanyName) inCompanyName.addEventListener('input', updateMockup);
+  if (inCompanySlogan) inCompanySlogan.addEventListener('input', updateMockup);
+  if (inFooterText) inFooterText.addEventListener('input', updateMockup);
+  if (inFontFamily) inFontFamily.addEventListener('change', updateMockup);
+
+  document.querySelectorAll('.btn-preset').forEach(btn => {
+   btn.addEventListener('click', () => {
+    const p = btn.dataset.primary;
+    const s = btn.dataset.sidebar;
+    const a = btn.dataset.accent;
+    if (inPrimaryColor) inPrimaryColor.value = p;
+    if (inPrimaryHex) inPrimaryHex.value = p.toUpperCase();
+    if (inSidebarColor) inSidebarColor.value = s;
+    if (inSidebarHex) inSidebarHex.value = s.toUpperCase();
+    if (inAccentColor) inAccentColor.value = a;
+    if (inAccentHex) inAccentHex.value = a.toUpperCase();
+    updateMockup();
+   });
+  });
+
+  if (btnDemoAnim && busOverlay) {
+   btnDemoAnim.addEventListener('click', () => {
+    const destNameEl = document.getElementById('bus-destination-name');
+    if (destNameEl) destNameEl.textContent = 'Probando animación del bus...';
+    busOverlay.style.display = 'flex';
+    requestAnimationFrame(() => {
+     busOverlay.classList.add('animating');
+    });
+    const dur = (parseFloat(document.getElementById('cfg-animation-duration')?.value || '1.8') || 1.8) * 1000;
+    setTimeout(() => {
+     busOverlay.classList.remove('animating');
+     setTimeout(() => { busOverlay.style.display = 'none'; }, 250);
+    }, dur);
+   });
+  }
+
+  updateMockup();
+ }
 });

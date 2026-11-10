@@ -647,3 +647,72 @@ def test_multas_pay_flow_and_pagadas_tab(environment):
     assert 'Multas del periodo' in vig_page.text
     assert 'Sanciones' not in vig_page.text
 
+
+def test_configuracion_only_admin_and_saves_settings(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+
+    # 1. Unauthenticated cannot access /configuracion
+    anon_resp = c.get('/configuracion', follow_redirects=False)
+    assert anon_resp.status_code == 303
+    assert anon_resp.headers['location'] == '/login'
+
+    # 2. Socio cannot access /configuracion (Forbidden 403)
+    login(c, 'socio')
+    socio_resp = c.get('/configuracion')
+    assert socio_resp.status_code == 403
+
+    # 3. Vigilante cannot access /configuracion (Forbidden 403)
+    assert post(c, '/logout').status_code == 303
+    login(c, 'vigilante')
+    vig_resp = c.get('/configuracion')
+    assert vig_resp.status_code == 403
+
+    # 4. Administrador can access /configuracion
+    assert post(c, '/logout').status_code == 303
+    login(c, 'admin')
+    admin_resp = c.get('/configuracion')
+    assert admin_resp.status_code == 200
+    assert 'Configurar página' in admin_resp.text
+    assert 'cfg-company-name' in admin_resp.text
+    assert 'live-mockup-frame' in admin_resp.text
+    assert 'bus-transition-overlay' in admin_resp.text
+
+    # 5. Admin saves new settings
+    token = csrf(c, '/configuracion')
+    save_resp = c.post('/configuracion', data={
+        '_csrf': token,
+        'company_name': 'Cooperativa San Cristóbal',
+        'company_slogan': 'Rutas del Austro',
+        'primary_color': '#b91c1c',
+        'sidebar_color': '#1e293b',
+        'accent_color': '#f59e0b',
+        'font_family': 'Inter, system-ui, sans-serif',
+        'bus_animation': '1',
+        'animation_duration': '1.8',
+        'footer_text': 'Cooperativa San Cristóbal · 2026'
+    }, follow_redirects=False)
+    assert save_resp.status_code == 303
+
+    # Verify saved settings in database
+    s = db.get_settings()
+    assert s['company_name'] == 'Cooperativa San Cristóbal'
+    assert s['primary_color'] == '#b91c1c'
+    assert s['sidebar_color'] == '#1e293b'
+
+    # Verify audit log
+    audit_row = db.one("SELECT * FROM audit WHERE action='Configurar sistema' ORDER BY id DESC LIMIT 1")
+    assert audit_row is not None
+    assert audit_row['ip_address'] is not None
+
+    # Verify page reflects new settings
+    new_page = c.get('/configuracion')
+    assert 'Cooperativa San Cristóbal' in new_page.text
+
+    # 6. Admin can reset to defaults
+    token_reset = csrf(c, '/configuracion')
+    reset_resp = c.post('/configuracion/reset', data={'_csrf': token_reset}, follow_redirects=False)
+    assert reset_resp.status_code == 303
+    s_reset = db.get_settings()
+    assert s_reset['company_name'] == 'Cooperativa de Transportes BusGestión'
+
+

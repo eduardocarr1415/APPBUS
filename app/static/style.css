@@ -1633,3 +1633,512 @@ td:nth-child(1) {
 }
 
 input[readonly]{background:#f7fafe !important;color:#17345f !important;border-color:#c9dbf1 !important;cursor:default}
+
+/* ==========================================================================
+   MEJORAS VISUALES TRANSPORTISTAS, ANIMACIÓN DEL BUS Y CONFIGURACIÓN
+   ========================================================================== */
+
+/* Variables CSS para personalización */
+:root {
+    --primary-color: #1d4ed8;
+    --primary-hover: #1e40af;
+    --sidebar-bg: #0f172a;
+    --accent-color: #f59e0b;
+    --app-font: Inter, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+
+body {
+    font-family: var(--app-font);
+}
+
+.sidebar {
+    background: var(--sidebar-bg, #0f172a) !important;
+}
+
+.btn.primary, button.primary {
+    background: var(--primary-color, #1d4ed8) !important;
+    border-color: var(--primary-color, #1d4ed8) !important;
+}
+
+.btn.primary:hover, button.primary:hover {
+    filter: brightness(0.92);
+}
+
+.nav-link.active {
+    border-left: 4px solid var(--accent-color, #f59e0b) !important;
+}
+
+.brand-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+}
+
+.brand-company {
+    font-weight: 800;
+    font-size: 14px;
+    color: #fff;
+    letter-spacing: -0.2px;
+}
+
+.brand-slogan {
+    font-size: 11px;
+    color: #94a3b8;
+    font-weight: 400;
+    margin-top: 1px;
+}
+
+/* ==========================================================================
+   ANIMACIÓN DEL BUS CONDUCIENDO AL CAMBIAR DE MÓDULO (OVERLAY FULLSCREEN)
+   ========================================================================== */
+.bus-transition-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+    pointer-events: all;
+}
+
+.bus-transition-overlay.animating {
+    opacity: 1 !important;
+    visibility: visible !important;
+    display: flex !important;
+}
+
+.bus-transition-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.88);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.bus-stage {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 90%;
+    max-width: 480px;
+    padding: 30px 24px;
+    background: #1e293b;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75), 0 0 40px rgba(29, 78, 216, 0.35);
+    overflow: hidden;
+}
+
+.bus-scenery {
+    width: 100%;
+    height: 135px;
+    position: relative;
+    background: linear-gradient(180deg, #091325 0%, #152542 55%, #1e3a5f 100%);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.scenery-highway {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 38px;
+    background: #0f172a;
+    border-top: 2px solid #475569;
+}
+
+.highway-lanes {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 200%;
+    height: 4px;
+    background: repeating-linear-gradient(90deg, #facc15 0, #facc15 25px, transparent 25px, transparent 48px);
+    animation: moveRoadLanes 0.45s linear infinite;
+}
+
+@keyframes moveRoadLanes {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-48px); }
+}
+
+.bus-runner-container {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3;
+}
+
+.bus-runner {
+    animation: busDriveSuspension 0.35s ease-in-out infinite alternate;
+}
+
+@keyframes busDriveSuspension {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-3px); }
+}
+
+.bus-animated-svg .wheel-front,
+.bus-animated-svg .wheel-rear {
+    animation: wheelSpin 0.35s linear infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes wheelSpin {
+    100% { transform: rotate(360deg); }
+}
+
+.bus-status-badge {
+    margin-top: 22px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.badge-tag {
+    background: var(--accent-color, #f59e0b);
+    color: #0f172a;
+    font-weight: 800;
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 3px 12px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    display: inline-block;
+    box-shadow: 0 0 14px rgba(245, 158, 11, 0.45);
+}
+
+.badge-dest {
+    color: #fff;
+    font-size: 19px;
+    font-weight: 700;
+    margin-top: 8px;
+    letter-spacing: -0.3px;
+}
+
+.badge-sub {
+    color: #94a3b8;
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+/* ==========================================================================
+   ESTILOS DE CONFIGURACIÓN Y VISTA PREVIA INTERACTIVA (LIVE PREVIEW)
+   ========================================================================== */
+.config-grid-layout {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 24px;
+    align-items: start;
+}
+
+@media (max-width: 1024px) {
+    .config-grid-layout { grid-template-columns: 1fr; }
+}
+
+.config-fieldset {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 20px;
+    background: #fff;
+}
+
+.config-fieldset legend {
+    font-weight: 700;
+    font-size: 13.5px;
+    color: #0f172a;
+    padding: 0 8px;
+}
+
+.preset-theme-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+}
+
+.config-section-label {
+    display: block;
+    font-size: 12px;
+    color: #475569;
+    margin-bottom: 10px;
+}
+
+.preset-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 8px;
+}
+
+.btn-preset {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #334155;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-preset:hover {
+    border-color: #1d4ed8;
+    background: #eff6ff;
+    transform: translateY(-1px);
+}
+
+.preset-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.color-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px;
+}
+
+.color-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.color-input-wrapper input[type="color"] {
+    width: 44px;
+    height: 38px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    cursor: pointer;
+    padding: 2px;
+}
+
+.hex-text {
+    font-family: monospace;
+    font-size: 13px;
+    text-transform: uppercase;
+    font-weight: 600;
+    width: 90px;
+}
+
+/* Maqueta Interactiva de Vista Previa */
+.mockup-frame {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    background: #fff;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+    font-size: 11px;
+    min-height: 420px;
+}
+
+.mockup-sidebar {
+    background: #0f172a;
+    color: #fff;
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    transition: background 0.2s ease;
+}
+
+.mockup-brand {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 10px;
+}
+
+.mockup-bus-icon { font-size: 18px; }
+.mockup-brand-title { font-weight: 800; font-size: 10px; line-height: 1.2; }
+.mockup-brand-slogan { font-size: 8px; color: #94a3b8; line-height: 1.1; }
+.mockup-nav { display: flex; flex-direction: column; gap: 4px; }
+
+.mockup-nav-item {
+    padding: 6px 8px;
+    border-radius: 6px;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.mockup-nav-item.active {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    border-left: 3px solid #f59e0b;
+}
+
+.mockup-main {
+    display: flex;
+    flex-direction: column;
+    background: #f8fafc;
+}
+
+.mockup-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #fff;
+    padding: 8px 12px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.mockup-search { color: #94a3b8; font-size: 10px; }
+.mockup-user { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+
+.mockup-avatar {
+    width: 20px;
+    height: 20px;
+    background: #1d4ed8;
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+}
+
+.mockup-content { padding: 12px; flex: 1; }
+
+.mockup-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.mockup-title-row h3 { font-size: 12px; margin: 0; }
+
+.mockup-badge {
+    background: #fef3c7;
+    color: #b45309;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 10px;
+}
+
+.mockup-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+
+.mockup-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+}
+
+.mockup-card-label { font-size: 9px; color: #64748b; font-weight: 600; }
+.mockup-card-val { font-size: 16px; font-weight: 800; color: #0f172a; }
+.mockup-card-val.text-accent { color: #f59e0b; }
+
+/* Placa vehicular ecuatoriana transportista */
+.transportista-plate-box {
+    display: flex;
+    justify-content: center;
+    margin: 12px 0;
+}
+
+.vehicle-plate-demo {
+    background: #ffffff;
+    border: 2px solid #000;
+    border-radius: 6px;
+    box-shadow: inset 0 0 4px rgba(0,0,0,0.2), 0 3px 6px rgba(0,0,0,0.12);
+    width: 140px;
+    padding: 4px;
+    text-align: center;
+    font-family: monospace;
+    position: relative;
+}
+
+.plate-top {
+    display: block;
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    color: #1e293b;
+}
+
+.plate-number {
+    display: block;
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    color: #0f172a;
+    line-height: 1.1;
+}
+
+.plate-unit {
+    display: inline-block;
+    font-size: 8px;
+    font-weight: 700;
+    background: #0f172a;
+    color: #facc15;
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-top: 2px;
+}
+
+.mockup-buttons { display: flex; gap: 6px; }
+
+.mockup-btn-primary {
+    background: #1d4ed8;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.mockup-btn-secondary {
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    color: #334155;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 9px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.mockup-footer {
+    background: #fff;
+    border-top: 1px solid #e2e8f0;
+    padding: 6px 10px;
+    font-size: 8px;
+    color: #94a3b8;
+    text-align: center;
+}

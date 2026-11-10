@@ -1,6 +1,141 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>{% block title %}BusGestión{% endblock %} · Compañía de Buses</title><link rel="icon" href="/static/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/static/style.css?v=2026.3" defer><script src="/static/app.js?v=2026.3" defer></script></head>
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{% block title %}{{ settings.company_name|default('BusGestión') }}{% endblock %} · {{ settings.company_slogan|default('Compañía de Buses') }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css?v=2026.4" defer>
+  <style id="dynamic-system-theme">
+    :root {
+      {% if settings.primary_color %}--primary-color: {{ settings.primary_color }};{% endif %}
+      {% if settings.sidebar_color %}--sidebar-bg: {{ settings.sidebar_color }};{% endif %}
+      {% if settings.accent_color %}--accent-color: {{ settings.accent_color }};{% endif %}
+      {% if settings.font_family %}--app-font: {{ settings.font_family|safe }};{% endif %}
+    }
+  </style>
+  <script src="/static/app.js?v=2026.4" defer></script>
+</head>
 <body class="{% if not user %}auth-body{% endif %}">
-{% if user %}<div class="shell"><aside class="sidebar" id="sidebar"><a class="brand" href="/"><span class="bus-logo"><img src="/static/bus-icon.svg" alt="Bus" width="40" height="40"></span><span>Sistema de Gestión de<br><b>Compañía de Buses</b></span></a><nav class="side-nav" aria-label="Navegación principal">{% for item in nav %}<a href="{{ item.url }}" class="nav-link {% if active==item.key %}active{% endif %}"><span class="nav-icon">{{ item.icon }}</span><span>{{ item.title }}</span></a>{% endfor %}</nav><div class="sidebar-foot"><img class="bus-illustration" src="/static/bus-landscape.svg" alt="Ilustración de bus"><small>Gestión organizada y segura<br>Edición de demostración</small></div></aside>
-<div class="layout"><header class="topbar"><button class="menu-toggle" type="button" aria-label="Abrir menú" data-menu-toggle>☰</button><form action="/buscar" method="get" class="global-search"><span>⌕</span><input type="search" name="q" aria-label="Buscar" placeholder="Buscar socios, reuniones, unidades..." maxlength="80"><button type="submit">Buscar</button></form><div class="top-right"><span class="top-date">Periodo {{ period.label }}</span><a class="user-identity" href="/perfil"><span class="avatar">{{ user.full_name[:1]|upper }}</span><span><b>{{ user.full_name }}</b><small>{{ user.role }}</small></span></a><form action="/logout" method="post"><input type="hidden" name="_csrf" value="{{ csrf }}"><button title="Cerrar sesión" class="icon-button" type="submit">⇥</button></form></div></header><main class="main">{% if ok %}<div role="status" class="notice success">✓ {{ ok }}</div>{% endif %}{% block content %}{% endblock %}</main><footer class="page-footer">BusGestión · Sistema local con SQLite · {{ year }}</footer></div></div>
-{% else %}{% block auth %}{% endblock %}{% endif %}
-</body></html>
+{% if user %}
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="/">
+      <span class="bus-logo"><img src="/static/bus-icon.svg" alt="Bus" width="40" height="40"></span>
+      <span class="brand-text">
+        <span class="brand-company">{{ settings.company_name|default('BusGestión') }}</span>
+        <small class="brand-slogan">{{ settings.company_slogan|default('Compañía de Buses') }}</small>
+      </span>
+    </a>
+    <nav class="side-nav" aria-label="Navegación principal">
+      {% for item in nav %}
+        <a href="{{ item.url }}" class="nav-link {% if active==item.key %}active{% endif %}">
+          <span class="nav-icon">{{ item.icon }}</span>
+          <span>{{ item.title }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+    <div class="sidebar-foot">
+      <img class="bus-illustration" src="/static/bus-landscape.svg" alt="Ilustración de bus">
+      <small>{{ settings.footer_text|default('Gestión organizada y segura') }}</small>
+    </div>
+  </aside>
+
+  <div class="layout">
+    <header class="topbar">
+      <button class="menu-toggle" type="button" aria-label="Abrir menú" data-menu-toggle>☰</button>
+      <form action="/buscar" method="get" class="global-search">
+        <span>⌕</span>
+        <input type="search" name="q" aria-label="Buscar" placeholder="Buscar socios, reuniones, unidades, multas..." maxlength="80">
+        <button type="submit">Buscar</button>
+      </form>
+      <div class="top-right">
+        <span class="top-date">Periodo {{ period.label }}</span>
+        <a class="user-identity" href="/perfil">
+          <span class="avatar">{{ user.full_name[:1]|upper }}</span>
+          <span><b>{{ user.full_name }}</b><small>{{ user.role }}</small></span>
+        </a>
+        <form action="/logout" method="post">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <button title="Cerrar sesión" class="icon-button" type="submit">⇥</button>
+        </form>
+      </div>
+    </header>
+
+    <main class="main">
+      {% if ok %}<div role="status" class="notice success">✓ {{ ok }}</div>{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="page-footer">
+      {{ settings.footer_text|default('BusGestión · Sistema local con SQLite') }} · {{ year }}
+    </footer>
+  </div>
+</div>
+
+{% if settings.bus_animation|default('1') == '1' %}
+<div id="bus-transition-overlay" class="bus-transition-overlay" aria-hidden="true" style="display:none;" data-duration="{{ settings.animation_duration|default('1.8') }}">
+  <div class="bus-transition-backdrop"></div>
+  <div class="bus-stage">
+    <div class="bus-scenery">
+      <div class="scenery-mountain"></div>
+      <div class="scenery-highway">
+        <div class="highway-lanes"></div>
+      </div>
+    </div>
+    <div class="bus-runner-container">
+      <div class="bus-runner">
+        <svg class="bus-animated-svg" viewBox="0 0 320 120" width="260" height="98">
+          <defs>
+            <linearGradient id="busGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="var(--primary-color, #1d4ed8)" />
+              <stop offset="100%" stop-color="#0f172a" />
+            </linearGradient>
+            <linearGradient id="beamGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="rgba(254, 240, 138, 0.9)" />
+              <stop offset="100%" stop-color="rgba(254, 240, 138, 0)" />
+            </linearGradient>
+          </defs>
+          <polygon points="275,68 320,48 320,90" fill="url(#beamGrad)" />
+          <rect x="25" y="20" width="250" height="64" rx="12" fill="url(#busGrad)" />
+          <rect x="80" y="14" width="120" height="8" rx="3" fill="#cbd5e1" />
+          <rect x="210" y="25" width="55" height="10" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1" />
+          <text x="237" y="33" fill="#facc15" font-size="7" font-family="monospace" font-weight="bold" text-anchor="middle">EN RUTA</text>
+          <rect x="35" y="34" width="30" height="24" rx="2" fill="#93c5fd" opacity="0.9" />
+          <rect x="72" y="34" width="36" height="24" rx="2" fill="#93c5fd" opacity="0.9" />
+          <rect x="114" y="34" width="36" height="24" rx="2" fill="#93c5fd" opacity="0.9" />
+          <rect x="156" y="34" width="36" height="24" rx="2" fill="#93c5fd" opacity="0.9" />
+          <rect x="198" y="34" width="20" height="46" rx="2" fill="#334155" opacity="0.95" />
+          <rect x="224" y="34" width="45" height="24" rx="2" fill="#bfdbfe" opacity="0.95" />
+          <path d="M 25 66 L 275 66 L 273 72 L 25 72 Z" fill="var(--accent-color, #f59e0b)" />
+          <circle cx="272" cy="69" r="4" fill="#fef08a" />
+          <rect x="23" y="60" width="3" height="10" rx="1" fill="#ef4444" />
+          <g class="bus-wheel wheel-front" transform="translate(225, 84)">
+            <circle cx="0" cy="0" r="15" fill="#1e293b" stroke="#0f172a" stroke-width="3" />
+            <circle cx="0" cy="0" r="8" fill="#94a3b8" />
+            <line x1="-8" y1="0" x2="8" y2="0" stroke="#0f172a" stroke-width="2" />
+            <line x1="0" y1="-8" x2="0" y2="8" stroke="#0f172a" stroke-width="2" />
+          </g>
+          <g class="bus-wheel wheel-rear" transform="translate(75, 84)">
+            <circle cx="0" cy="0" r="15" fill="#1e293b" stroke="#0f172a" stroke-width="3" />
+            <circle cx="0" cy="0" r="8" fill="#94a3b8" />
+            <line x1="-8" y1="0" x2="8" y2="0" stroke="#0f172a" stroke-width="2" />
+            <line x1="0" y1="-8" x2="0" y2="8" stroke="#0f172a" stroke-width="2" />
+          </g>
+        </svg>
+      </div>
+    </div>
+    <div class="bus-status-badge">
+      <span class="badge-tag">CONDUCIENDO</span>
+      <span id="bus-destination-name" class="badge-dest">Cargando módulo...</span>
+      <span class="badge-sub">¡Buen viaje! Flota operativa al día</span>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% else %}
+{% block auth %}{% endblock %}
+{% endif %}
+</body>
+</html>
