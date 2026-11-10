@@ -1,6 +1,6 @@
 """Presentation queries for separated, navigable tabs."""
 from datetime import date
-from .reports import fmt, REPORT_TYPES
+from .reports import fmt
 
 NAV = [
  ('dashboard','/','▦','Dashboard',''),
@@ -9,7 +9,6 @@ NAV = [
  ('finanzas','/finanzas','▥','Ingresos económicos','finanzas.ver'),
  ('multas','/multas','⚒','Multas','multas.ver'),
  ('unidades','/unidades','▣','Unidades y vehículos','unidades.ver'),
- ('vigilancia','/vigilancia','♢','Vigilancia','vigilancia.ver'),
  ('reportes','/reportes','▥','Reportes','reportes.ver'),
  ('usuarios','/usuarios','♙','Usuarios y permisos','usuarios.ver'),
  ('auditoria','/auditoria','⏱','Historial del sistema','auditoria.ver'),
@@ -21,21 +20,18 @@ TABS={
  'finanzas':[('resumen','Resumen'),('ingresos','Ingresos'),('pagos','Pagos'),('deudas','Deudas'),('marcaciones','Marcación semanal'),('historial','Historial')],
  'multas':[('multas','Multas'),('pendientes','Pendientes'),('pagadas','Pagadas')],
  'unidades':[('unidades','Unidades'),('vehiculos','Vehículos'),('cambios','Cambios de vehículo')],
- 'vigilancia':[('multas','Multas del periodo'),('historial','Historial de multas')],
- 'reportes':[('resumen','Resumen'),('financieros','Financieros'),('multas','Multas'),('asistencia','Asistencia'),('unidades','Unidades'),('cierre','Cierre anual'),('historial','Historial')],
+ 'reportes':[('resumen','Resumen'),('financieros','Finanzas y gestión'),('multas','Multas'),('asistencia','Asistencia'),('unidades','Unidades'),('cierre','Cierre anual de multas'),('historial','Historial de multas')],
  'usuarios':[('usuarios','Usuarios'),('roles','Roles'),('permisos','Permisos'),('auditoria','Auditoría')],
  'auditoria':[('todos','Todo el historial'),('logins','Inicios y accesos'),('operaciones','Operaciones'),('seguridad','Seguridad')],
 }
-TITLES={'socios':'Socios','actas':'Actas y reuniones','finanzas':'Ingresos económicos','multas':'Multas','unidades':'Unidades y vehículos','vigilancia':'Consejo de vigilancia','reportes':'Reportes y cierre anual','usuarios':'Usuarios y permisos','auditoria':'Historial del sistema'}
+TITLES={'socios':'Socios','actas':'Actas y reuniones','finanzas':'Ingresos económicos','multas':'Multas y sanciones','unidades':'Unidades y vehículos','reportes':'Reportes','usuarios':'Usuarios y permisos'}
 SUBTITLES={'socios':'Registro y administración de los socios de la compañía.',
 'actas':'Gestión de actas, reuniones, convocatorias y asistencia.',
 'finanzas':'Control de ingresos, pagos y deudas de la compañía.',
 'multas':'Registro, cobro y seguimiento de multas.',
 'unidades':'Control de vehículos, asignaciones y cambios de unidad.',
-'vigilancia':'Supervisión y control de multas y actividades operativas.',
-'reportes':'Informes administrativos y cierre del 25 de diciembre.',
-'usuarios':'Gestión de usuarios, roles, permisos y auditoría.',
-'auditoria':'Registro integral de auditoría, accesos al sistema y operaciones de usuarios.'}
+'reportes':'Informes organizados por tema, con periodos y cierres de multas independientes.',
+'usuarios':'Gestión de usuarios, roles, permisos y auditoría.'}
 
 def card(label, value, icon='▦', color='blue'):
     return {'label':label,'value':value,'icon':icon,'color':color}
@@ -129,30 +125,45 @@ def modules(db, key, tab, role_name='', socio_id=None):
         else:
             settable('Unidades registradas',['ID','Unidad','Socio','Placa','Estado'],'''SELECT u.id,u.code,COALESCE(s.name,'Sin asignar'),COALESCE(v.plate,'Sin vehículo'),u.status FROM units u LEFT JOIN socios s ON s.id=u.socio_id LEFT JOIN vehicles v ON v.id=u.vehicle_id'''+(' WHERE u.socio_id=?' if own else '')+' ORDER BY u.code',(socio_id,) if own else ())
             R.update(new_kind='unidades',new_label='Nueva unidad')
-    elif key=='vigilancia':
-        q=' AND f.socio_id=?' if own else ''
-        args_period=(pid,socio_id) if own else (pid,)
-        args_all=(socio_id,) if own else ()
-        n_period=db.one('SELECT COUNT(*) n FROM fines f WHERE f.period_id=?'+q,args_period)['n']
-        n_pend=db.one("SELECT COUNT(*) n FROM fines f WHERE f.status='Pendiente'"+q,args_all)['n']
-        n_paid=db.one("SELECT COUNT(*) n FROM fines f WHERE f.status='Pagada'"+q,args_all)['n']
-        R['cards']=[
-            card('Multas del periodo',n_period,'⚒','blue'),
-            card('Multas pendientes',n_pend,'!','orange' if n_pend else 'green'),
-            card('Multas pagadas',n_paid,'✓','green'),
-        ]
-        if tab=='historial':
-            settable('Historial de multas',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE 1=1'''+q+' ORDER BY f.id DESC LIMIT 200',args_all,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
-            R.update(new_kind='multas',new_label='Registrar multa')
-        else:
-            settable('Multas del periodo',['ID','Fecha','Socio','Cédula','Unidad','Motivo','Monto','Estado'],'''SELECT f.id,f.occurred_at,s.name,COALESCE(s.cedula,'—'),COALESCE(u.code,'Sin unidad'),f.reason,f.amount_cents,f.status FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE f.period_id=?'''+q+' ORDER BY f.id DESC',args_period,lambda x:[x['id'],x['occurred_at'],x['name'],x["COALESCE(s.cedula,'—')"],x["COALESCE(u.code,'Sin unidad')"],x['reason'],fmt(x['amount_cents']),x['status']])
-            R.update(new_kind='multas',new_label='Registrar multa')
     elif key=='reportes':
-        R['cards']=[card('Periodo en curso',p['label'],'▦'),card('Fecha de cierre',p['ends'],'▤'),card('Reportes disponibles',len(REPORT_TYPES),'▥')]
-        R.update(section='Reportes disponibles',report_types=REPORT_TYPES,periods=db.all('SELECT * FROM periods ORDER BY ends DESC'))
-        if tab=='cierre': R.update(section='Cierre anual del 25 de diciembre')
-        if tab=='historial':
-            settable('Historial de periodos',['Año','Inicio','Fin','Cerrado el'],'''SELECT label,starts,ends,COALESCE(closed_at,'Abierto') FROM periods ORDER BY ends DESC''')
+        cycle=db.current_fine_cycle()
+        active_fines=db.one('''SELECT COUNT(*) AS count,COALESCE(SUM(amount_cents),0) AS total,
+            COALESCE(SUM(CASE WHEN status='Pendiente' THEN amount_cents ELSE 0 END),0) AS pending
+            FROM fines WHERE fine_cycle_id=?''',(cycle['id'],))
+        today=date.today().isoformat()
+        R.update(fine_cycle=cycle,active_fines=active_fines,today=today,
+                 can_close_cycle=cycle['starts']<=today,current_month=date.today().strftime('%Y-%m'))
+        if tab=='resumen':
+            R['cards']=[card('Periodo económico',p['label'],'▦'),
+                        card('Multas acumuladas',active_fines['count'],'⚒'),
+                        card('Monto de multas',fmt(active_fines['total']),'▤')]
+            R.update(section='Resumen del periodo',
+                     section_description='Indicadores consolidados. Los detalles de cada tema están en su pestaña para evitar repetir registros.')
+        elif tab=='financieros':
+            R.update(section='Finanzas y gestión mensual',
+                     section_description='El detalle financiero reúne ingresos y pagos; el informe gerencial resume los movimientos del mes sin volver a registrarlos.')
+        elif tab=='multas':
+            R['cards']=[card('Multas del ciclo',active_fines['count'],'⚒'),
+                        card('Monto registrado',fmt(active_fines['total']),'▤'),
+                        card('Pendiente',fmt(active_fines['pending']),'◇','red')]
+            settable('Multas del ciclo actual',['Fecha','Socio','Motivo','Monto','Estado'],'''SELECT f.occurred_at,s.name,f.reason,f.amount_cents,f.status
+                FROM fines f JOIN socios s ON s.id=f.socio_id WHERE f.fine_cycle_id=? ORDER BY f.occurred_at DESC,f.id DESC''',
+                (cycle['id'],),lambda x:[x['occurred_at'],x['name'],x['reason'],fmt(x['amount_cents']),x['status']])
+        elif tab in ('asistencia','unidades'):
+            R.update(section='Informe de asistencia' if tab=='asistencia' else 'Inventario de unidades',
+                     section_description='Descargue el informe correspondiente. Esta sección ofrece el informe, sin duplicar aquí el detalle que ya existe en su módulo.')
+        elif tab=='cierre':
+            R['cards']=[card('Ciclo de multas',cycle['label'],'⚒'),
+                        card('Multas acumuladas',active_fines['count'],'▤'),
+                        card('Monto acumulado',fmt(active_fines['total']),'◇')]
+            R.update(section='Cierre del ciclo de multas',
+                     section_description='El cierre conserva el historial y los totales. No elimina multas ni cierra ingresos, pagos o deudas.')
+        elif tab=='historial':
+            R.update(section='Ciclos cerrados de multas',
+                     fine_history=db.all('''SELECT c.id,c.label,c.starts,c.ends,c.closed_at,c.snapshot,
+                         COUNT(f.id) AS fine_count,COALESCE(SUM(f.amount_cents),0) AS fine_total
+                         FROM fine_cycles c LEFT JOIN fines f ON f.fine_cycle_id=c.id
+                         WHERE c.closed_at IS NOT NULL GROUP BY c.id ORDER BY c.ends DESC,c.id DESC'''))
     elif key=='usuarios':
         R['cards']=[card('Usuarios totales',db.one('SELECT COUNT(*) n FROM users')['n'],'♙'),card('Usuarios activos',db.one('SELECT COUNT(*) n FROM users WHERE active=1')['n'],'✓','green'),card('Roles definidos',db.one('SELECT COUNT(*) n FROM roles')['n'],'▧')]
         if tab=='roles':

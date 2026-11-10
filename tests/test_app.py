@@ -1,6 +1,8 @@
 """Security and data-integrity regression tests. Run: python -m pytest -q"""
 import re
-from datetime import date
+import json
+import sqlite3
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -102,18 +104,89 @@ def test_socio_only_sees_own_finances(environment):
     assert c.get('/reportes').status_code==403
 
 def test_report_outputs_and_period_close_guard(environment):
-    app,db,c,*_=environment
+    app,db,c,sid,*_=environment
     login(c)
     pdf=c.get('/reporte/general.pdf')
     assert pdf.status_code==200 and pdf.content.startswith(b'%PDF-')
     csv=c.get('/reporte/deudas.csv')
     assert csv.status_code==200 and csv.content.startswith(b'\xef\xbb\xbf')
+    monthly=c.get('/reporte/gerencia.csv?month='+date.today().strftime('%Y-%m'))
+    assert monthly.status_code==200 and b'Ingresos registrados' in monthly.content
+    monthly_pdf=c.get('/reporte/gerencia.pdf?month='+date.today().strftime('%Y-%m'))
+    assert monthly_pdf.status_code==200 and monthly_pdf.content.startswith(b'%PDF-')
+    assert c.get('/reportes?tab=resumen').status_code==200
+    finances_page=c.get('/reportes?tab=financieros')
+    assert finances_page.status_code==200 and 'Informe gerencial mensual' in finances_page.text
+    assert finances_page.text.count('Ingresos y pagos')==1
+    assert 'Reportes disponibles' not in finances_page.text
+    assert c.get('/reportes?tab=cierre').status_code==200
+    assert c.get('/vigilancia').status_code==404
+
+    cycle=db.current_fine_cycle()
+    fine=post(c,'/nuevo/multas',{'socio_id':str(sid),'unit_id':'','category':'Atraso',
+        'reason':'Prueba de cierre','occurred_at':date.today().isoformat(),'amount':'25'})
+    assert fine.status_code==303
+    fine_record=db.one('SELECT * FROM fines ORDER BY id DESC LIMIT 1')
+    assert fine_record['fine_cycle_id']==cycle['id']
+
     period=db.current_period()
-    from datetime import date as dt
-    if dt.today()<dt.fromisoformat(period['ends']):
-        resp=post(c,'/cierre',{'confirmacion':'CERRAR '+period['label']})
-        assert resp.status_code==400
-        assert db.one('SELECT closed_at FROM periods WHERE id=?',(period['id'],))['closed_at'] is None
+    invalid_close=post(c,'/cierre',{'close_date':date.today().isoformat(),
+        'confirmacion':'incorrecto'})
+    assert invalid_close.status_code==400
+    assert db.one('SELECT closed_at FROM fine_cycles WHERE id=?',(cycle['id'],))['closed_at'] is None
+    closed=post(c,'/cierre',{'close_date':date.today().isoformat(),
+        'confirmacion':'CERRAR '+cycle['label']})
+    assert closed.status_code==303
+    old_cycle=db.one('SELECT * FROM fine_cycles WHERE id=?',(cycle['id'],))
+    assert old_cycle['ends']==date.today().isoformat() and old_cycle['closed_at']
+    assert json.loads(old_cycle['snapshot'])['count']==1
+    next_cycle=db.current_fine_cycle()
+    assert next_cycle['starts']==(date.today()+timedelta(days=1)).isoformat()
+    assert db.one('SELECT closed_at FROM periods WHERE id=?',(period['id'],))['closed_at'] is None
+    assert db.one('SELECT fine_cycle_id FROM fines WHERE id=?',(fine_record['id'],))['fine_cycle_id']==cycle['id']
+    income_after_close=post(c,'/nuevo/ingresos',{'day':date.today().isoformat(),
+        'socio_id':'','category':'Otros','concept':'Ingreso luego del cierre',
+        'amount':'5','method':'Efectivo'})
+    assert income_after_close.status_code==303
+    old_report=c.get(f'/reporte/multas.csv?fine_cycle_id={cycle["id"]}')
+    assert old_report.status_code==200 and b'Prueba de cierre' in old_report.content
+    current_report=c.get(f'/reporte/multas.csv?fine_cycle_id={next_cycle["id"]}')
+    assert current_report.status_code==200 and b'Prueba de cierre' not in current_report.content
+
+
+def test_legacy_fines_are_migrated_to_cycles_idempotently(tmp_path):
+    path=tmp_path/'legacy.sqlite3'
+    today=date.today()
+    ending=today.year if today<=date(today.year,12,25) else today.year+1
+    starts=f'{ending-1}-12-26'
+    ends=f'{ending}-12-25'
+    con=sqlite3.connect(path)
+    con.executescript('''
+        CREATE TABLE periods(id INTEGER PRIMARY KEY,label TEXT UNIQUE,starts TEXT,ends TEXT,
+            closed_at TEXT,closed_by INTEGER,snapshot TEXT);
+        CREATE TABLE socios(id INTEGER PRIMARY KEY,name TEXT);
+        CREATE TABLE fines(id INTEGER PRIMARY KEY,period_id INTEGER,socio_id INTEGER,unit_id INTEGER,
+            category TEXT,reason TEXT,occurred_at TEXT,amount_cents INTEGER,status TEXT,
+            created_by INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+    ''')
+    con.execute('INSERT INTO periods(id,label,starts,ends) VALUES(1,?,?,?)',
+                (str(ending),starts,ends))
+    con.execute('INSERT INTO socios(id,name) VALUES(1,?)',('Socio legado',))
+    con.execute('''INSERT INTO fines(id,period_id,socio_id,category,reason,occurred_at,amount_cents,status)
+        VALUES(1,1,1,'Atraso','Multa legado',?,5000,'Pendiente')''',(today.isoformat(),))
+    con.commit()
+    con.close()
+
+    db=Database(path)
+    db.init()
+    first=db.one('SELECT fine_cycle_id FROM fines WHERE id=1')['fine_cycle_id']
+    cycle=db.one('SELECT * FROM fine_cycles WHERE id=?',(first,))
+    assert cycle['source_period_id']==1 and cycle['starts']==starts and cycle['ends'] is None
+    assert db.one('SELECT snapshot FROM fine_cycles WHERE id=?',(first,))['snapshot'] is not None
+    db.init()
+    assert db.one('SELECT COUNT(*) AS n FROM fine_cycles')['n']==1
+    assert db.one('SELECT fine_cycle_id FROM fines WHERE id=1')['fine_cycle_id']==first
+
 
 def test_permissions_survive_reinitialization(environment):
     app,db,c,*_=environment
@@ -283,13 +356,14 @@ def test_user_role_change_revokes_existing_sessions(environment):
     app,db,c,sid,other,aid,vid,sid_user=environment
     with TestClient(app) as second:
         login(second,'vigilante')
-        assert second.get('/vigilancia').status_code==200
+        assert second.get('/multas').status_code==200
+        assert second.get('/vigilancia').status_code==404
         login(c,'admin')
         secretary=db.one("SELECT id FROM roles WHERE name='Secretaría'")['id']
         r=post(c,f'/usuario/{vid}/rol',{'role_id':str(secretary)})
         assert r.status_code==303
         # The previously issued vigilante session is invalidated by role change.
-        res=second.get('/vigilancia',follow_redirects=False)
+        res=second.get('/multas',follow_redirects=False)
         assert res.status_code==303 and res.headers['location']=='/login'
 
 

@@ -32,8 +32,9 @@ Si PowerShell bloquea activar entornos virtuales, puede ejecutar `\.venv\Scripts
 - **Ingresos económicos:** Resumen / Ingresos / Pagos / Deudas / Marcación semanal / Historial.
 - **Multas:** Multas / Pendientes / Pagadas. Una nueva multa crea una deuda vinculada. Al pagar esa deuda, la multa queda pagada.
 - **Unidades y vehículos:** Unidades / Vehículos / Cambios. Se conserva cada reasignación.
-- **Vigilancia:** Controles / Sanciones / Actividad.
-- **Reportes:** informes generales, económicos, de deudas, multas, asistencia, unidades y vigilancia en PDF y CSV, con historial de periodos.
+- **Vigilancia:** rol de acceso para multas, sin registro digital de las verificaciones diarias de unidades.
+- **Cierre anual:** cierre por ciclo de multas con fecha efectiva seleccionable; cada cierre conserva las multas y sus totales.
+- **Reportes:** resumen ejecutivo, informes financieros, informe gerencial mensual, multas por ciclo, asistencia, inventario de unidades e historial de cierres en PDF y CSV. Los controles diarios de unidades no se digitalizan.
 - **Usuarios y permisos:** Usuarios / Roles / Permisos / Auditoría.
 
 Los formularios de alta y edición están en pantallas separadas. Los campos se validan en el navegador y nuevamente en el servidor: en socios, nombre, cédula, celular y correo son obligatorios; el nombre solo admite letras y separadores habituales, la cédula solo números hasta 10 dígitos, el celular exactamente 10 y el correo debe tener formato válido. Los errores señalan el campo que debe corregirse. Las demás entradas también tienen límites y validaciones según su tipo. Los cobros originales se guardan como operaciones inmutables: este prototipo no permite editar movimientos históricos para evitar cambios de saldos sin rastro.
@@ -47,7 +48,7 @@ El administrador crea los usuarios desde la aplicación. **No existe registro p�
 | Administrador | Todos los módulos, permisos, cierre y administración. |
 | Secretaría | Socios, reuniones, actas, convocatorias, asistencia, unidades (lectura), reportes. |
 | Tesorería | Finanzas (registro y consulta), socios (lectura), multas/unidades (consulta) y reportes. |
-| Vigilancia | Vigilancia, altas de multas, lectura de socios y unidades, reportes. |
+| Vigilancia | Altas y consulta de multas, lectura de socios y unidades, reportes. |
 | Socio | Consulta limitada de sus finanzas, multas y unidades, y consulta de actas. Debe vincularse a un socio registrado. |
 
 Los reportes tienen permisos individuales: poder abrir el módulo no concede acceso automático a reportes financieros o datos de asistencia. Solo el administrador gestiona los permisos por rol. El rol Administrador no es editable desde la matriz. Al cambiar un rol o contraseña se invalidan las sesiones anteriores. Se evita desactivar la propia cuenta y quedarse sin administradores activos.
@@ -65,11 +66,9 @@ Los reportes tienen permisos individuales: poder abrir el módulo no concede acc
 
 **No debe publicarse tal cual como sistema de producción en Internet.** Antes de usar información real se necesita HTTPS, revisión de seguridad externa, gestión de copias fuera del equipo, pruebas con usuarios, política de privacidad, recuperación de cuentas por canal verificado, límites de almacenamiento, verificación de archivos antivirus y la validación de reglas económicas y legales de la cooperativa. SQLite se recomienda para un despliegue local pequeño; varios usuarios simultáneos podrían requerir PostgreSQL. La recuperación mostrada solo indica contactar al administrador: **no envía correos**.
 
-## Cierre anual del 25 de diciembre
+## Cierre anual del ciclo de multas
 
-**Regla de demostración (pendiente de validación con la compañía):** el periodo va del **26 de diciembre anterior al 25 de diciembre actual**. El cierre exige permiso y la confirmación `CERRAR AÑO`, donde AÑO se reemplaza por el identificador del periodo (ejemplo `CERRAR 2026`), y no se activa antes del día 25. El cierre bloquea las nuevas operaciones sobre el periodo anterior, conserva un resumen histórico y da paso a un periodo nuevo el 26 de diciembre. **Los saldos de deudas no se eliminan ni se reinician**; permanecen disponibles para cobranza. El 25 se pueden descargar previamente todos los reportes. La regla exacta de qué se reinicia debe confirmarse con la compañía.
-
-Los cobros de periodos cerrados permanecen como historial y los abonos posteriores se registran en el periodo nuevo.
+El administrador elige la fecha efectiva al realizar cada cierre; no hay una fecha anual fija impuesta. Se cierra únicamente el ciclo de multas acumuladas hasta esa fecha. El ciclo siguiente comienza al día siguiente. El sistema guarda el conteo, monto, pendiente y pagado como resumen del cierre, y conserva todos los registros de multas para consulta y descarga. El cierre no bloquea ni reinicia ingresos, pagos o deudas. No se registran en el sistema las verificaciones diarias de unidades.
 
 ## Base de datos, respaldos y rutas
 
@@ -84,4 +83,4 @@ La app utiliza el puerto 8000; puede cambiarlo con `BUS_PORT`. Para hacer accesi
 
 ## Limitaciones conocidas del prototipo
 
-Se han implementado los flujos principales de registro, consulta, informes y acceso. Antes del uso real se deben acordar los montos de multas, el significado de *marcación semanal*, quién puede aprobar actas, las reglas de cambio de vehículo, qué documentos deben firmarse y qué contadores se reinician el 25 de diciembre. La publicación de convocatorias es **interna al sistema** (no envía WhatsApp ni correos). Los reportes CSV se pueden abrir con Excel, aunque no son archivos `.xlsx`. Los datos de demostración no representan valores reales.
+Se han implementado los flujos principales de registro, consulta, informes y acceso. Antes del uso real se deben acordar los montos de multas, el significado de *marcación semanal*, quién puede aprobar actas, las reglas de cambio de vehículo y qué documentos deben firmarse. La publicación de convocatorias es **interna al sistema** (no envía WhatsApp ni correos). Los reportes CSV se pueden abrir con Excel, aunque no son archivos `.xlsx`. Los datos de demostración no representan valores reales.

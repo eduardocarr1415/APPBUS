@@ -1,5 +1,6 @@
 """SQLite data model, transactions and parameterized queries."""
 import sqlite3
+import json
 from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
@@ -10,12 +11,11 @@ PERMISSIONS = {
     'finanzas.ver': 'Consultar economía y deudas', 'finanzas.editar': 'Registrar ingresos, pagos, deudas y marcaciones',
     'multas.ver': 'Consultar multas', 'multas.editar': 'Registrar y actualizar multas',
     'unidades.ver': 'Consultar unidades y vehículos', 'unidades.editar': 'Gestionar unidades y cambios',
-    'vigilancia.ver': 'Consultar controles de vigilancia', 'vigilancia.editar': 'Registrar controles de vigilancia',
     'reportes.ver': 'Abrir módulo de reportes',
     'reportes.general': 'Descargar informe general', 'reportes.finanzas': 'Descargar ingresos y pagos',
     'reportes.deudas': 'Descargar deudas', 'reportes.multas': 'Descargar multas',
     'reportes.asistencia': 'Descargar asistencia', 'reportes.unidades': 'Descargar unidades',
-    'reportes.vigilancia': 'Descargar vigilancia', 'cierres.ejecutar': 'Cerrar periodos anuales',
+    'cierres.ejecutar': 'Cerrar el ciclo anual de multas',
     'usuarios.ver': 'Consultar usuarios', 'usuarios.editar': 'Crear y administrar usuarios',
     'roles.editar': 'Administrar roles y permisos', 'auditoria.ver': 'Consultar registro de auditoría',
     'configuracion.ver': 'Configurar y parametrizar página',
@@ -24,7 +24,7 @@ ROLES = {
     'Administrador': list(PERMISSIONS),
     'Secretaría': ['socios.ver','socios.crear','actas.ver','actas.editar','unidades.ver','reportes.ver','reportes.asistencia','reportes.unidades'],
     'Tesorería': ['socios.ver','finanzas.ver','finanzas.editar','multas.ver','unidades.ver','reportes.ver','reportes.finanzas','reportes.deudas','reportes.multas'],
-    'Vigilancia': ['socios.ver','multas.ver','multas.editar','unidades.ver','vigilancia.ver','vigilancia.editar','reportes.ver','reportes.multas','reportes.unidades','reportes.vigilancia'],
+    'Vigilancia': ['socios.ver','multas.ver','multas.editar','unidades.ver','reportes.ver','reportes.multas','reportes.unidades'],
     'Socio': ['actas.ver','finanzas.ver','multas.ver','unidades.ver'],
 }
 DDL = """
@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS socios (
 CREATE TABLE IF NOT EXISTS periods (
  id INTEGER PRIMARY KEY, label TEXT NOT NULL UNIQUE, starts TEXT NOT NULL, ends TEXT NOT NULL,
  closed_at TEXT, closed_by INTEGER REFERENCES users(id), snapshot TEXT, CHECK(starts <= ends)
+);
+CREATE TABLE IF NOT EXISTS fine_cycles (
+ id INTEGER PRIMARY KEY, label TEXT NOT NULL UNIQUE, starts TEXT NOT NULL, ends TEXT,
+ closed_at TEXT, closed_by INTEGER REFERENCES users(id), snapshot TEXT,
+ source_period_id INTEGER UNIQUE REFERENCES periods(id)
 );
 CREATE TABLE IF NOT EXISTS vehicles (
  id INTEGER PRIMARY KEY, plate TEXT NOT NULL UNIQUE COLLATE NOCASE, brand TEXT, model TEXT,
@@ -125,7 +130,8 @@ CREATE TABLE IF NOT EXISTS fines (
  id INTEGER PRIMARY KEY, period_id INTEGER NOT NULL REFERENCES periods(id), socio_id INTEGER NOT NULL REFERENCES socios(id),
  unit_id INTEGER REFERENCES units(id), category TEXT NOT NULL, reason TEXT NOT NULL, occurred_at TEXT NOT NULL,
  amount_cents INTEGER NOT NULL CHECK(amount_cents>0), status TEXT NOT NULL DEFAULT 'Pendiente' CHECK(status IN ('Pendiente','Pagada','Anulada')),
- created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ fine_cycle_id INTEGER REFERENCES fine_cycles(id)
 );
 CREATE TABLE IF NOT EXISTS weekly_marks (
  id INTEGER PRIMARY KEY, period_id INTEGER NOT NULL REFERENCES periods(id), socio_id INTEGER NOT NULL REFERENCES socios(id),
@@ -201,6 +207,34 @@ class Database:
             if admin_row:
                 con.execute("INSERT OR IGNORE INTO role_permissions(role_id, permission) VALUES(?, 'configuracion.ver')", (admin_row['id'],))
             self.ensure_period(con, date.today())
+            self.migrate_fine_cycles(con)
+            con.execute("DELETE FROM role_permissions WHERE permission IN ('vigilancia.ver','vigilancia.editar','reportes.vigilancia')")
+            self.ensure_fine_cycle(con,date.today())
+
+    @staticmethod
+    def migrate_fine_cycles(con):
+        columns={row['name'] for row in con.execute('PRAGMA table_info(fines)').fetchall()}
+        if 'fine_cycle_id' not in columns:
+            con.execute('ALTER TABLE fines ADD COLUMN fine_cycle_id INTEGER REFERENCES fine_cycles(id)')
+        con.execute('CREATE INDEX IF NOT EXISTS idx_fines_cycle ON fines(fine_cycle_id,occurred_at)')
+        periods=con.execute('SELECT * FROM periods ORDER BY starts,id').fetchall()
+        for period in periods:
+            cycle=con.execute('SELECT id FROM fine_cycles WHERE source_period_id=?',(period['id'],)).fetchone()
+            if cycle:
+                cycle_id=cycle['id']
+            else:
+                totals=con.execute('''SELECT COUNT(*) AS count,COALESCE(SUM(amount_cents),0) AS total,
+                    COALESCE(SUM(CASE WHEN status='Pendiente' THEN amount_cents ELSE 0 END),0) AS pending
+                    FROM fines WHERE period_id=?''',(period['id'],)).fetchone()
+                snapshot=json.dumps(dict(totals),ensure_ascii=False)
+                end=period['ends'] if period['closed_at'] else None
+                cycle_id=con.execute('''INSERT INTO fine_cycles
+                    (label,starts,ends,closed_at,closed_by,snapshot,source_period_id)
+                    VALUES(?,?,?,?,?,?,?)''',
+                    (period['label'],period['starts'],end,period['closed_at'],
+                     period['closed_by'],snapshot,period['id'])).lastrowid
+            con.execute('UPDATE fines SET fine_cycle_id=? WHERE period_id=? AND fine_cycle_id IS NULL',
+                        (cycle_id,period['id']))
 
     @staticmethod
     def ensure_period(con, today):
@@ -213,9 +247,26 @@ class Database:
         con.execute('INSERT INTO periods(label,starts,ends) VALUES(?,?,?)',(label,start,end))
         return dict(con.execute('SELECT * FROM periods WHERE label=?',(label,)).fetchone())
 
+    @staticmethod
+    def ensure_fine_cycle(con,today):
+        row=con.execute('SELECT * FROM fine_cycles WHERE closed_at IS NULL ORDER BY id DESC LIMIT 1').fetchone()
+        if row:
+            return dict(row)
+        previous=con.execute('SELECT ends FROM fine_cycles WHERE ends IS NOT NULL ORDER BY ends DESC,id DESC LIMIT 1').fetchone()
+        start=(date.fromisoformat(previous['ends'])+timedelta(days=1)).isoformat() if previous else Database.ensure_period(con,today)['starts']
+        year=start[:4]
+        count=con.execute('SELECT COUNT(*) AS n FROM fine_cycles WHERE label LIKE ?',(year+'%',)).fetchone()['n']
+        label=year if count==0 else f'{year}-{count+1}'
+        cycle_id=con.execute('INSERT INTO fine_cycles(label,starts) VALUES(?,?)',(label,start)).lastrowid
+        return dict(con.execute('SELECT * FROM fine_cycles WHERE id=?',(cycle_id,)).fetchone())
+
     def current_period(self):
         with self.connection() as con:
             return self.ensure_period(con,date.today())
+
+    def current_fine_cycle(self):
+        with self.connection() as con:
+            return self.ensure_fine_cycle(con,date.today())
 
     @staticmethod
     def audit(con, uid, action, entity, record_id=None, summary='', ip=None):
