@@ -3,8 +3,8 @@
 {% block content %}
 <div class="heading-row">
   <div>
-    <h1>⚙ Configurar página y personalización de la flota</h1>
-    <p>Personalice la identidad de su empresa de transporte, colores, tipografía y efectos visuales con vista previa en vivo.</p>
+    <h1>⚙ Centro de Parametrización y Personalización del Sistema</h1>
+    <p>Personalice completamente la plataforma: logos, imágenes, colores corporativos, tipografía, iconos de módulos, estilos de pestañas y animación.</p>
   </div>
 </div>
 
@@ -12,147 +12,412 @@
   <!-- Columna Izquierda: Formulario de Parámetros -->
   <section class="panel config-controls-panel">
     <div class="panel-heading">
-      <h2>Parámetros del sistema</h2>
-      <span class="pill green">Solo Administrador</span>
+      <h2>Parámetros de Configuración</h2>
+      <span class="pill green">Exclusivo Administrador</span>
     </div>
 
-    <!-- Presets Transportistas Rápidos -->
-    <div class="preset-theme-box">
-      <label class="config-section-label"><b>Paletas de estilo transportista recomendadas (1 clic):</b></label>
-      <div class="preset-buttons">
-        <button type="button" class="btn-preset" data-preset="andina" data-primary="#1d4ed8" data-sidebar="#0f172a" data-accent="#f59e0b">
-          <span class="preset-dot" style="background:#1d4ed8;"></span>
-          <span class="preset-dot" style="background:#0f172a;"></span>
-          <span class="preset-dot" style="background:#f59e0b;"></span>
-          🚍 Flota Clásica (Azul / Ámbar)
-        </button>
-        <button type="button" class="btn-preset" data-preset="metro" data-primary="#b91c1c" data-sidebar="#1e293b" data-accent="#f59e0b">
-          <span class="preset-dot" style="background:#b91c1c;"></span>
-          <span class="preset-dot" style="background:#1e293b;"></span>
-          <span class="preset-dot" style="background:#f59e0b;"></span>
-          🚌 Metro Ruta (Rojo / Asfalto)
-        </button>
-        <button type="button" class="btn-preset" data-preset="expreso" data-primary="#047857" data-sidebar="#064e3b" data-accent="#10b981">
-          <span class="preset-dot" style="background:#047857;"></span>
-          <span class="preset-dot" style="background:#064e3b;"></span>
-          <span class="preset-dot" style="background:#10b981;"></span>
-          🚎 Expreso Verde (Ecológico)
-        </button>
-        <button type="button" class="btn-preset" data-preset="noche" data-primary="#6d28d9" data-sidebar="#09090b" data-accent="#eab308">
-          <span class="preset-dot" style="background:#6d28d9;"></span>
-          <span class="preset-dot" style="background:#09090b;"></span>
-          <span class="preset-dot" style="background:#eab308;"></span>
-          🚐 Línea Nocturna (Púrpura / Oro)
-        </button>
-      </div>
+    <!-- Pestañas de categorías de configuración -->
+    <div class="config-nav-tabs" role="tablist">
+      <button type="button" class="config-nav-btn active" data-target="sec-identidad">🏢 Identidad y Textos</button>
+      <button type="button" class="config-nav-btn" data-target="sec-logos">🖼️ Logos e Imágenes</button>
+      <button type="button" class="config-nav-btn" data-target="sec-colores">🎨 Colores y Estilo</button>
+      <button type="button" class="config-nav-btn" data-target="sec-pestanas">📑 Pestañas (Tabs)</button>
+      <button type="button" class="config-nav-btn" data-target="sec-iconos">🎛️ Iconos de Módulos</button>
+      <button type="button" class="config-nav-btn" data-target="sec-animacion">🚍 Animación del Bus</button>
     </div>
 
-    <form id="config-form" action="/configuracion" method="post" class="form-stack">
+    <form id="config-form" action="/configuracion" method="post" enctype="multipart/form-data" class="form-stack">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <input type="hidden" id="cfg-tabs-style" name="tabs_style" value="{{ current_settings.tabs_style|default('capsule') }}">
 
-      <!-- Grupo 1: Identidad -->
-      <fieldset class="config-fieldset">
-        <legend>🏢 Identidad de la Empresa / Cooperativa</legend>
+      <!-- SECCIÓN 1: IDENTIDAD Y TEXTOS -->
+      <div id="sec-identidad" class="config-section-panel active">
+        <fieldset class="config-fieldset">
+          <legend>🏢 Identidad Institucional y Textos</legend>
 
-        <div class="field">
-          <label for="cfg-company-name"><b>Nombre de la compañía o cooperativa</b> <span class="required">*</span></label>
-          <input type="text" id="cfg-company-name" name="company_name" value="{{ current_settings.company_name }}" required maxlength="100" placeholder="Ej: Compañía de Transportes Guaytacama">
-        </div>
-
-        <div class="field">
-          <label for="cfg-company-slogan"><b>Subtítulo o lema de operaciones</b></label>
-          <input type="text" id="cfg-company-slogan" name="company_slogan" value="{{ current_settings.company_slogan }}" maxlength="150" placeholder="Ej: Buses Guaytacama · Servicio Interparroquial e Interprovincial">
-        </div>
-
-        <div class="field">
-          <label for="cfg-footer-text"><b>Texto de pie de página</b></label>
-          <input type="text" id="cfg-footer-text" name="footer_text" value="{{ current_settings.footer_text }}" maxlength="150" placeholder="Ej: Transportes Guaytacama · Sistema de Control Operativo y Flota">
-        </div>
-      </fieldset>
-
-      <!-- Grupo 2: Colores -->
-      <fieldset class="config-fieldset">
-        <legend>🎨 Colores de la Plataforma</legend>
-
-        <div class="color-picker-grid">
-          <div class="field color-field">
-            <label for="cfg-primary-color"><b>Color Primario (Botones y destacados)</b></label>
-            <div class="color-input-wrapper">
-              <input type="color" id="cfg-primary-color" name="primary_color" value="{{ current_settings.primary_color }}">
-              <input type="text" id="cfg-primary-hex" class="hex-text" value="{{ current_settings.primary_color }}" maxlength="7">
-            </div>
+          <div class="field">
+            <label for="cfg-company-name"><b>Nombre de la compañía o cooperativa</b> <span class="required">*</span></label>
+            <input type="text" id="cfg-company-name" name="company_name" value="{{ current_settings.company_name }}" required maxlength="100" placeholder="Ej: Compañía de Transportes Guaytacama">
+            <small class="muted">Se visualiza en la cabecera, barra lateral, títulos y reportes.</small>
           </div>
 
-          <div class="field color-field">
-            <label for="cfg-sidebar-color"><b>Barra Lateral (Menú principal)</b></label>
-            <div class="color-input-wrapper">
-              <input type="color" id="cfg-sidebar-color" name="sidebar_color" value="{{ current_settings.sidebar_color }}">
-              <input type="text" id="cfg-sidebar-hex" class="hex-text" value="{{ current_settings.sidebar_color }}" maxlength="7">
-            </div>
+          <div class="field">
+            <label for="cfg-company-slogan"><b>Subtítulo o lema de operaciones</b></label>
+            <input type="text" id="cfg-company-slogan" name="company_slogan" value="{{ current_settings.company_slogan }}" maxlength="150" placeholder="Ej: Buses Guaytacama · Servicio Interparroquial e Interprovincial">
+            <small class="muted">Lema o descripción visible bajo el nombre institucional.</small>
           </div>
 
-          <div class="field color-field">
-            <label for="cfg-accent-color"><b>Color de Acento (Alertas y badges)</b></label>
-            <div class="color-input-wrapper">
-              <input type="color" id="cfg-accent-color" name="accent_color" value="{{ current_settings.accent_color }}">
-              <input type="text" id="cfg-accent-hex" class="hex-text" value="{{ current_settings.accent_color }}" maxlength="7">
+          <div class="field">
+            <label for="cfg-footer-text"><b>Texto de pie de página</b></label>
+            <input type="text" id="cfg-footer-text" name="footer_text" value="{{ current_settings.footer_text }}" maxlength="150" placeholder="Ej: Transportes Guaytacama · Sistema de Control Operativo y Flota">
+            <small class="muted">Aparece en el pie de página de la aplicación y bajo el banner lateral.</small>
+          </div>
+
+          <div class="field">
+            <label for="cfg-login-title"><b>Título en pantalla de Login</b></label>
+            <input type="text" id="cfg-login-title" name="login_title" value="{{ current_settings.login_title|default('Sistema de Gestión de Compañía de Buses') }}" maxlength="120" placeholder="Ej: Sistema de Gestión de Compañía de Buses">
+          </div>
+
+          <div class="field">
+            <label for="cfg-login-subtitle"><b>Subtítulo en pantalla de Login</b></label>
+            <input type="text" id="cfg-login-subtitle" name="login_subtitle" value="{{ current_settings.login_subtitle|default('Accede a la plataforma de gestión de la compañía.') }}" maxlength="180" placeholder="Ej: Accede a la plataforma de gestión de la compañía.">
+          </div>
+        </fieldset>
+      </div>
+
+      <!-- SECCIÓN 2: LOGOS, IMÁGENES Y FAVICON -->
+      <div id="sec-logos" class="config-section-panel">
+        <fieldset class="config-fieldset">
+          <legend>🖼️ Logos, Ilustraciones y Favicon</legend>
+          <p class="muted hint">Suba archivos desde su equipo (PNG, JPG, SVG, WebP o ICO hasta 4MB) o ingrese una ruta personalizada.</p>
+
+          <div class="img-upload-grid">
+            <!-- 1. Logo Principal -->
+            <div class="img-upload-card">
+              <div class="img-upload-header">
+                <span class="img-upload-title">Logo de la Cabecera</span>
+                <span class="pill">Principal</span>
+              </div>
+              <div class="img-preview-box">
+                <img id="preview-header-logo" src="{{ current_settings.header_logo_url|default('/static/bus-icon.svg') }}" alt="Logo Cabecera">
+              </div>
+              <div class="img-upload-actions">
+                <label class="btn secondary small file-input-btn">
+                  📁 Subir logo
+                  <input type="file" id="cfg-header-logo-file" name="header_logo_file" accept=".png,.jpg,.jpeg,.svg,.webp,.ico">
+                </label>
+              </div>
+              <input type="text" id="cfg-header-logo-url" name="header_logo_url" value="{{ current_settings.header_logo_url|default('/static/bus-icon.svg') }}" placeholder="O ruta URL del logo...">
+            </div>
+
+            <!-- 2. Banner de la Barra Lateral -->
+            <div class="img-upload-card">
+              <div class="img-upload-header">
+                <span class="img-upload-title">Ilustración / Banner Lateral</span>
+                <span class="pill">Menú Módulos</span>
+              </div>
+              <div class="img-preview-box">
+                <img id="preview-sidebar-banner" src="{{ current_settings.sidebar_banner_url|default('/static/bus-guaytacama.svg') }}" alt="Banner Lateral">
+              </div>
+              <div class="img-upload-actions">
+                <label class="btn secondary small file-input-btn">
+                  📁 Subir imagen
+                  <input type="file" id="cfg-sidebar-banner-file" name="sidebar_banner_file" accept=".png,.jpg,.jpeg,.svg,.webp">
+                </label>
+              </div>
+              <input type="text" id="cfg-sidebar-banner-url" name="sidebar_banner_url" value="{{ current_settings.sidebar_banner_url|default('/static/bus-guaytacama.svg') }}" placeholder="O ruta URL de la ilustración...">
+            </div>
+
+            <!-- 3. Favicon del Navegador -->
+            <div class="img-upload-card">
+              <div class="img-upload-header">
+                <span class="img-upload-title">Favicon de Pestaña</span>
+                <span class="pill">Navegador</span>
+              </div>
+              <div class="img-preview-box" style="height:60px;">
+                <img id="preview-favicon" src="{{ current_settings.favicon_url|default('/static/favicon.svg') }}" alt="Favicon" style="max-height:45px;">
+              </div>
+              <div class="img-upload-actions">
+                <label class="btn secondary small file-input-btn">
+                  📁 Subir icono
+                  <input type="file" id="cfg-favicon-file" name="favicon_file" accept=".ico,.svg,.png">
+                </label>
+              </div>
+              <input type="text" id="cfg-favicon-url" name="favicon_url" value="{{ current_settings.favicon_url|default('/static/favicon.svg') }}" placeholder="O ruta URL del favicon...">
+            </div>
+
+            <!-- 4. Fondo Pantalla de Login -->
+            <div class="img-upload-card">
+              <div class="img-upload-header">
+                <span class="img-upload-title">Fondo de Inicio de Sesión</span>
+                <span class="pill">Login</span>
+              </div>
+              <div class="img-preview-box" style="height:60px;">
+                <img id="preview-login-banner" src="{{ current_settings.login_banner_url|default('/static/bus-landscape.svg') }}" alt="Login Banner" style="max-height:45px;">
+              </div>
+              <div class="img-upload-actions">
+                <label class="btn secondary small file-input-btn">
+                  📁 Subir fondo
+                  <input type="file" id="cfg-login-banner-file" name="login_banner_file" accept=".png,.jpg,.jpeg,.svg,.webp">
+                </label>
+              </div>
+              <input type="text" id="cfg-login-banner-url" name="login_banner_url" value="{{ current_settings.login_banner_url|default('/static/bus-landscape.svg') }}" placeholder="O ruta URL de fondo...">
             </div>
           </div>
-        </div>
-      </fieldset>
+        </fieldset>
+      </div>
 
-      <!-- Grupo 3: Tipografía -->
-      <fieldset class="config-fieldset">
-        <legend>🔤 Tipografía y Letras</legend>
+      <!-- SECCIÓN 3: COLORES Y APARIENCIA -->
+      <div id="sec-colores" class="config-section-panel">
+        <fieldset class="config-fieldset">
+          <legend>🎨 Paletas Transportistas Recomendadas (1 Clic)</legend>
+          <div class="preset-buttons">
+            <button type="button" class="btn-preset" data-preset="guaytacama" data-primary="#1d4ed8" data-sidebar="#0f172a" data-accent="#f59e0b" data-bg="#f8fafc">
+              <span class="preset-dot" style="background:#1d4ed8;"></span>
+              <span class="preset-dot" style="background:#0f172a;"></span>
+              <span class="preset-dot" style="background:#f59e0b;"></span>
+              🚍 Flota Guaytacama (Azul Real / Ámbar)
+            </button>
+            <button type="button" class="btn-preset" data-preset="metro" data-primary="#b91c1c" data-sidebar="#1e293b" data-accent="#f59e0b" data-bg="#f8fafc">
+              <span class="preset-dot" style="background:#b91c1c;"></span>
+              <span class="preset-dot" style="background:#1e293b;"></span>
+              <span class="preset-dot" style="background:#f59e0b;"></span>
+              🚌 Metro Ruta (Rojo / Carbón)
+            </button>
+            <button type="button" class="btn-preset" data-preset="expreso" data-primary="#047857" data-sidebar="#064e3b" data-accent="#10b981" data-bg="#f0fdf4">
+              <span class="preset-dot" style="background:#047857;"></span>
+              <span class="preset-dot" style="background:#064e3b;"></span>
+              <span class="preset-dot" style="background:#10b981;"></span>
+              🚎 Expreso Verde (Ecológico)
+            </button>
+            <button type="button" class="btn-preset" data-preset="noche" data-primary="#6d28d9" data-sidebar="#09090b" data-accent="#eab308" data-bg="#faf5ff">
+              <span class="preset-dot" style="background:#6d28d9;"></span>
+              <span class="preset-dot" style="background:#09090b;"></span>
+              <span class="preset-dot" style="background:#eab308;"></span>
+              🚐 Línea Nocturna (Púrpura / Oro)
+            </button>
+            <button type="button" class="btn-preset" data-preset="dark" data-primary="#3b82f6" data-sidebar="#050811" data-accent="#38bdf8" data-bg="#0f172a">
+              <span class="preset-dot" style="background:#3b82f6;"></span>
+              <span class="preset-dot" style="background:#050811;"></span>
+              <span class="preset-dot" style="background:#38bdf8;"></span>
+              🌙 Dark Fleet (Modo Oscuro)
+            </button>
+          </div>
+        </fieldset>
 
-        <div class="field">
-          <label for="cfg-font-family"><b>Familia tipográfica del sistema</b></label>
-          <select id="cfg-font-family" name="font_family">
-            <option value="Inter, system-ui, sans-serif" {% if 'Inter' in current_settings.font_family %}selected{% endif %}>Inter (Recomendada: Moderna y de alta legibilidad en pantallas)</option>
-            <option value="'Segoe UI', Roboto, Arial, sans-serif" {% if 'Segoe UI' in current_settings.font_family %}selected{% endif %}>Segoe UI / Roboto (Corporativa clásica de oficina)</option>
-            <option value="'Plus Jakarta Sans', system-ui, sans-serif" {% if 'Plus Jakarta' in current_settings.font_family %}selected{% endif %}>Plus Jakarta Sans (Vanguardista y dinámica para transporte)</option>
-            <option value="system-ui, -apple-system, sans-serif" {% if current_settings.font_family == 'system-ui, -apple-system, sans-serif' %}selected{% endif %}>Nativa del Sistema Operativo</option>
-          </select>
-        </div>
-      </fieldset>
+        <fieldset class="config-fieldset" style="margin-top:16px;">
+          <legend>🎨 Selector Personalizado de Colores</legend>
 
-      <!-- Grupo 4: Animación del Bus -->
-      <fieldset class="config-fieldset">
-        <legend>🚍 Animación del Bus en Navegación</legend>
+          <div class="color-picker-grid">
+            <div class="field color-field">
+              <label for="cfg-primary-color"><b>Color Primario (Botones y destacados)</b></label>
+              <div class="color-input-wrapper">
+                <input type="color" id="cfg-primary-color" name="primary_color" value="{{ current_settings.primary_color }}">
+                <input type="text" id="cfg-primary-hex" class="hex-text" value="{{ current_settings.primary_color }}" maxlength="7">
+              </div>
+            </div>
 
-        <div class="field check-row">
-          <input type="checkbox" id="cfg-bus-animation" name="bus_animation" value="1" {% if current_settings.bus_animation == '1' %}checked{% endif %}>
-          <label for="cfg-bus-animation" style="cursor:pointer;font-weight:600;">
-            Activar animación del bus conduciendo al cambiar de módulo
-          </label>
-        </div>
+            <div class="field color-field">
+              <label for="cfg-sidebar-color"><b>Barra Lateral (Menú de navegación)</b></label>
+              <div class="color-input-wrapper">
+                <input type="color" id="cfg-sidebar-color" name="sidebar_color" value="{{ current_settings.sidebar_color }}">
+                <input type="text" id="cfg-sidebar-hex" class="hex-text" value="{{ current_settings.sidebar_color }}" maxlength="7">
+              </div>
+            </div>
 
-        <div class="field" style="margin-top:10px;">
-          <label for="cfg-animation-duration"><b>Duración de la animación</b></label>
-          <select id="cfg-animation-duration" name="animation_duration">
-            <option value="1.5" {% if current_settings.animation_duration == '1.5' %}selected{% endif %}>1.5 segundos (Rápida)</option>
-            <option value="1.8" {% if current_settings.animation_duration == '1.8' %}selected{% endif %}>1.8 segundos (Equilibrada)</option>
-            <option value="2.0" {% if current_settings.animation_duration == '2.0' %}selected{% endif %}>2.0 segundos (Estándar recomendada)</option>
-          </select>
-        </div>
+            <div class="field color-field">
+              <label for="cfg-accent-color"><b>Color de Acento (Alertas y badges)</b></label>
+              <div class="color-input-wrapper">
+                <input type="color" id="cfg-accent-color" name="accent_color" value="{{ current_settings.accent_color }}">
+                <input type="text" id="cfg-accent-hex" class="hex-text" value="{{ current_settings.accent_color }}" maxlength="7">
+              </div>
+            </div>
 
-        <div style="margin-top:12px;">
-          <button type="button" class="btn secondary small" id="btn-demo-bus-anim">
-            ▶ Probar animación del bus en vivo
-          </button>
-        </div>
-      </fieldset>
+            <div class="field color-field">
+              <label for="cfg-page-bg-color"><b>Fondo General de la Página</b></label>
+              <div class="color-input-wrapper">
+                <input type="color" id="cfg-page-bg-color" name="page_bg_color" value="{{ current_settings.page_bg_color|default('#f8fafc') }}">
+                <input type="text" id="cfg-page-bg-hex" class="hex-text" value="{{ current_settings.page_bg_color|default('#f8fafc') }}" maxlength="7">
+              </div>
+            </div>
 
+            <div class="field color-field">
+              <label for="cfg-card-bg-color"><b>Fondo de Tarjetas y Paneles</b></label>
+              <div class="color-input-wrapper">
+                <input type="color" id="cfg-card-bg-color" name="card_bg_color" value="{{ current_settings.card_bg_color|default('#ffffff') }}">
+                <input type="text" id="cfg-card-bg-hex" class="hex-text" value="{{ current_settings.card_bg_color|default('#ffffff') }}" maxlength="7">
+              </div>
+            </div>
+
+            <div class="field color-field">
+              <label for="cfg-sidebar-text-color"><b>Texto de la Barra Lateral</b></label>
+              <div class="color-input-wrapper">
+                <input type="color" id="cfg-sidebar-text-color" name="sidebar_text_color" value="{{ current_settings.sidebar_text_color|default('#e2e8f0') }}">
+                <input type="text" id="cfg-sidebar-text-hex" class="hex-text" value="{{ current_settings.sidebar_text_color|default('#e2e8f0') }}" maxlength="7">
+              </div>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="config-fieldset" style="margin-top:16px;">
+          <legend>📐 Bordes y Tipografía</legend>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div class="field">
+              <label for="cfg-border-radius"><b>Estilo de Bordes y Curvatura</b></label>
+              <select id="cfg-border-radius" name="border_radius">
+                <option value="8px" {% if current_settings.border_radius == '8px' %}selected{% endif %}>8px (Clásico / Sutil)</option>
+                <option value="14px" {% if current_settings.border_radius|default('14px') == '14px' %}selected{% endif %}>14px (Moderno / Suave)</option>
+                <option value="22px" {% if current_settings.border_radius == '22px' %}selected{% endif %}>22px (Cápsula Redondeada)</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="cfg-font-family"><b>Familia Tipográfica</b></label>
+              <select id="cfg-font-family" name="font_family">
+                <option value="Inter, system-ui, sans-serif" {% if 'Inter' in current_settings.font_family %}selected{% endif %}>Inter (Recomendada: Moderna y legible)</option>
+                <option value="'Segoe UI', Roboto, Arial, sans-serif" {% if 'Segoe UI' in current_settings.font_family %}selected{% endif %}>Segoe UI / Roboto (Corporativa)</option>
+                <option value="'Plus Jakarta Sans', system-ui, sans-serif" {% if 'Plus Jakarta' in current_settings.font_family %}selected{% endif %}>Plus Jakarta Sans (Vanguardista)</option>
+                <option value="system-ui, -apple-system, sans-serif" {% if current_settings.font_family == 'system-ui, -apple-system, sans-serif' %}selected{% endif %}>Nativa del Sistema Operativo</option>
+              </select>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+
+      <!-- SECCIÓN 4: ESTILO DE PESTAÑAS (TABS) -->
+      <div id="sec-pestanas" class="config-section-panel">
+        <fieldset class="config-fieldset">
+          <legend>📑 Estilo de la Barra de Pestañas (Módulos)</legend>
+          <p class="muted hint">Elija cómo se presentan las pestañas internas en cada módulo (Socios, Multas, Unidades, Finanzas, etc.):</p>
+
+          <div class="tabs-style-grid">
+            <!-- 1. Cápsula Flotante -->
+            <div class="tabs-style-option {% if current_settings.tabs_style|default('capsule') == 'capsule' %}selected{% endif %}" data-style="capsule">
+              <div class="tabs-style-title">
+                <span>💊 Cápsula Flotante (Recomendada)</span>
+              </div>
+              <div class="tabs-style-preview" style="background:#fff;border:1px solid #dbeafe;border-radius:12px;padding:6px;box-shadow:0 3px 8px rgba(0,0,0,0.04);">
+                <span style="background:#1d4ed8;color:#fff;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;">Activa</span>
+                <span style="color:#64748b;padding:4px 8px;font-size:11px;font-weight:600;">Pestaña 2</span>
+              </div>
+              <small class="muted">Barra flotante blanca con bordes redondeados y sombra suave.</small>
+            </div>
+
+            <!-- 2. Subrayado Clásico -->
+            <div class="tabs-style-option {% if current_settings.tabs_style == 'underline' %}selected{% endif %}" data-style="underline">
+              <div class="tabs-style-title">
+                <span>━ Subrayado Clásico</span>
+              </div>
+              <div class="tabs-style-preview" style="border-bottom:2px solid #e2e8f0;background:transparent;padding:4px 0;">
+                <span style="border-bottom:3px solid #1d4ed8;color:#1d4ed8;padding:4px 10px;font-size:11px;font-weight:700;">Activa</span>
+                <span style="color:#64748b;padding:4px 8px;font-size:11px;font-weight:600;">Pestaña 2</span>
+              </div>
+              <small class="muted">Estilo corporativo limpio con indicador de línea inferior.</small>
+            </div>
+
+            <!-- 3. Botones Píldora -->
+            <div class="tabs-style-option {% if current_settings.tabs_style == 'pills' %}selected{% endif %}" data-style="pills">
+              <div class="tabs-style-title">
+                <span>🔘 Botones Píldora</span>
+              </div>
+              <div class="tabs-style-preview" style="background:transparent;padding:4px 0;">
+                <span style="background:#1d4ed8;color:#fff;border-radius:9999px;padding:4px 12px;font-size:11px;font-weight:700;">Activa</span>
+                <span style="background:#e2e8f0;color:#475569;border-radius:9999px;padding:4px 10px;font-size:11px;font-weight:600;">Pestaña 2</span>
+              </div>
+              <small class="muted">Botones independientes con esquinas completamente redondeadas.</small>
+            </div>
+
+            <!-- 4. Barra Segmentada -->
+            <div class="tabs-style-option {% if current_settings.tabs_style == 'segmented' %}selected{% endif %}" data-style="segmented">
+              <div class="tabs-style-title">
+                <span>▥ Barra Segmentada</span>
+              </div>
+              <div class="tabs-style-preview" style="background:#e2e8f0;border-radius:8px;padding:4px;">
+                <span style="background:#fff;color:#1d4ed8;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,0.1);">Activa</span>
+                <span style="color:#64748b;padding:4px 8px;font-size:11px;font-weight:600;">Pestaña 2</span>
+              </div>
+              <small class="muted">Control integrado tipo interruptor segmentado moderno.</small>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+
+      <!-- SECCIÓN 5: ICONOS Y TÍTULOS DE MÓDULOS -->
+      <div id="sec-iconos" class="config-section-panel">
+        <fieldset class="config-fieldset">
+          <legend>🎛️ Personalización de Iconos y Títulos de Módulos</legend>
+          <p class="muted hint">Personalice el icono y el nombre de cada módulo en la barra de navegación lateral:</p>
+
+          <div class="module-icon-grid">
+            {% set mod_list = [
+              ('dashboard', 'Dashboard', '▦', ['▦', '📊', '📈', '🏠', '📋']),
+              ('socios', 'Socios', '♙', ['♙', '👥', '👤', '🪪', '👔']),
+              ('actas', 'Actas y reuniones', '▤', ['▤', '📜', '📝', '📅', '🗂️']),
+              ('finanzas', 'Ingresos económicos', '▥', ['▥', '💰', '💳', '💵', '🏦']),
+              ('multas', 'Multas', '⚒', ['⚒', '⚖️', '⚑', '⚠️', '🚨']),
+              ('unidades', 'Unidades y vehículos', '▣', ['▣', '🚌', '🚍', '🚐', '🚘']),
+              ('reportes', 'Reportes', '📈', ['📈', '📊', '📑', '📄', '🖨️']),
+              ('usuarios', 'Usuarios y permisos', '👥', ['👥', '🔐', '🛡️', '🔑', '👤']),
+              ('auditoria', 'Historial del sistema', '⏱', ['⏱', '🛡️', '🔍', '📜', '🔒']),
+              ('configuracion', 'Configurar página', '⚙', ['⚙', '🛠️', '🎨', '🎛️', '🧰'])
+            ] %}
+
+            {% for mod_key, mod_default_title, mod_default_icon, suggestions in mod_list %}
+            <div class="module-icon-card">
+              <div class="module-icon-top">
+                <input type="text" id="cfg-icon-{{ mod_key }}" name="icon_{{ mod_key }}" class="module-icon-input" value="{{ current_settings['icon_' ~ mod_key]|default(mod_default_icon) }}" maxlength="8" title="Icono del módulo">
+                <input type="text" id="cfg-title-{{ mod_key }}" name="title_{{ mod_key }}" class="module-title-input" value="{{ current_settings['title_' ~ mod_key]|default(mod_default_title) }}" maxlength="50" placeholder="{{ mod_default_title }}" title="Título del módulo">
+              </div>
+              <div class="icon-suggestions">
+                <small class="muted" style="margin-right:4px;">Sugerencias:</small>
+                {% for sug in suggestions %}
+                  <span class="icon-chip" data-target="cfg-icon-{{ mod_key }}">{{ sug }}</span>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </fieldset>
+      </div>
+
+      <!-- SECCIÓN 6: ANIMACIÓN DEL BUS -->
+      <div id="sec-animacion" class="config-section-panel">
+        <fieldset class="config-fieldset">
+          <legend>🚍 Animación del Bus en Navegación</legend>
+
+          <div class="field check-row">
+            <input type="checkbox" id="cfg-bus-animation" name="bus_animation" value="1" {% if current_settings.bus_animation == '1' %}checked{% endif %}>
+            <label for="cfg-bus-animation" style="cursor:pointer;font-weight:600;">
+              Activar animación del bus conduciendo al cambiar de módulo
+            </label>
+          </div>
+
+          <div class="field" style="margin-top:12px;">
+            <label for="cfg-animation-duration"><b>Duración de la animación</b></label>
+            <select id="cfg-animation-duration" name="animation_duration">
+              <option value="1.5" {% if current_settings.animation_duration == '1.5' %}selected{% endif %}>1.5 segundos (Rápida)</option>
+              <option value="1.8" {% if current_settings.animation_duration == '1.8' %}selected{% endif %}>1.8 segundos (Equilibrada recomendada)</option>
+              <option value="2.0" {% if current_settings.animation_duration == '2.0' %}selected{% endif %}>2.0 segundos (Estándar)</option>
+              <option value="2.5" {% if current_settings.animation_duration == '2.5' %}selected{% endif %}>2.5 segundos (Cinemática)</option>
+            </select>
+          </div>
+
+          <div class="field" style="margin-top:12px;">
+            <label for="cfg-bus-led-text"><b>Texto LED en visera del bus</b></label>
+            <input type="text" id="cfg-bus-led-text" name="bus_led_text" value="{{ current_settings.bus_led_text|default('GUAYTACAMA') }}" maxlength="25" placeholder="GUAYTACAMA">
+            <small class="muted">Texto luminoso digital en la parte frontal superior del autobús.</small>
+          </div>
+
+          <div class="field" style="margin-top:12px;">
+            <label for="cfg-bus-badge-tag"><b>Etiqueta de ruta</b></label>
+            <input type="text" id="cfg-bus-badge-tag" name="bus_badge_tag" value="{{ current_settings.bus_badge_tag|default('RUTA GUAYTACAMA') }}" maxlength="35" placeholder="RUTA GUAYTACAMA">
+          </div>
+
+          <div class="field" style="margin-top:12px;">
+            <label for="cfg-bus-badge-sub"><b>Subtexto de la insignia de animación</b></label>
+            <input type="text" id="cfg-bus-badge-sub" name="bus_badge_sub" value="{{ current_settings.bus_badge_sub|default('Buses Guaytacama · Puntualidad, Confort y Seguridad') }}" maxlength="120" placeholder="Lema de viaje...">
+          </div>
+
+          <div style="margin-top:16px;">
+            <button type="button" class="btn secondary small" id="btn-demo-bus-anim">
+              ▶ Probar animación del bus en vivo
+            </button>
+          </div>
+        </fieldset>
+      </div>
+
+      <!-- BOTONES DE ACCIÓN PRINCIPALES -->
       <div class="form-actions" style="margin-top:24px;display:flex;gap:12px;align-items:center;">
-        <button type="submit" class="btn primary" style="font-weight:700;padding:10px 22px;">
+        <button type="submit" class="btn primary" style="font-weight:700;padding:12px 26px;font-size:14.5px;">
           ✓ Guardar y aplicar configuración
         </button>
       </div>
     </form>
 
-    <form action="/configuracion/reset" method="post" style="margin-top:16px;border-top:1px dashed #cbd5e1;padding-top:16px;">
+    <form action="/configuracion/reset" method="post" style="margin-top:20px;border-top:1px dashed #cbd5e1;padding-top:16px;">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <button type="submit" class="btn secondary small" data-confirm="¿Restaurar los colores y textos predeterminados de fábrica?">
+      <button type="submit" class="btn secondary small" data-confirm="¿Restaurar los valores y textos predeterminados de fábrica de Buses Guaytacama?">
         ↺ Restaurar valores de fábrica
       </button>
     </form>
@@ -164,8 +429,8 @@
       <h2>👁 Vista previa interactiva en vivo</h2>
       <span class="pill" id="preview-sync-status">Sincronizado en tiempo real</span>
     </div>
-    <p class="muted hint" style="margin-bottom:16px;">
-      Así se verá el sistema para los usuarios. Todos los cambios que haga a la izquierda se reflejan al instante aquí:
+    <p class="muted hint" style="margin-bottom:14px;">
+      Vista previa instantánea: cualquier cambio a la izquierda (colores, logos, iconos, pestañas, textos) se refleja aquí en tiempo real antes de guardar.
     </p>
 
     <!-- Maqueta en miniatura del sistema -->
@@ -173,18 +438,35 @@
       <!-- Mini Barra Lateral -->
       <div class="mockup-sidebar" id="mockup-sidebar">
         <div class="mockup-brand">
-          <span class="mockup-bus-icon">🚌</span>
+          <span class="mockup-bus-icon">
+            <img id="mockup-logo-img" src="{{ current_settings.header_logo_url|default('/static/bus-icon.svg') }}" alt="Logo" style="width:26px;height:26px;object-fit:contain;">
+          </span>
           <div>
             <div class="mockup-brand-title" id="mockup-brand-title">{{ current_settings.company_name }}</div>
             <div class="mockup-brand-slogan" id="mockup-brand-slogan">{{ current_settings.company_slogan }}</div>
           </div>
         </div>
+
         <div class="mockup-nav">
-          <div class="mockup-nav-item active" id="mockup-nav-active">▦ Dashboard</div>
-          <div class="mockup-nav-item">♙ Socios</div>
-          <div class="mockup-nav-item">⚒ Multas</div>
-          <div class="mockup-nav-item">▣ Unidades</div>
-          <div class="mockup-nav-item">▥ Finanzas</div>
+          <div class="mockup-nav-item active" id="mockup-nav-active">
+            {{ current_settings.icon_dashboard|default('▦') }} {{ current_settings.title_dashboard|default('Dashboard') }}
+          </div>
+          <div class="mockup-nav-item">
+            {{ current_settings.icon_socios|default('♙') }} {{ current_settings.title_socios|default('Socios') }}
+          </div>
+          <div class="mockup-nav-item">
+            {{ current_settings.icon_multas|default('⚒') }} {{ current_settings.title_multas|default('Multas') }}
+          </div>
+          <div class="mockup-nav-item">
+            {{ current_settings.icon_unidades|default('▣') }} {{ current_settings.title_unidades|default('Unidades') }}
+          </div>
+          <div class="mockup-nav-item">
+            {{ current_settings.icon_finanzas|default('▥') }} {{ current_settings.title_finanzas|default('Finanzas') }}
+          </div>
+        </div>
+
+        <div style="margin-top:auto;padding:8px 0;text-align:center;">
+          <img id="mockup-banner-img" src="{{ current_settings.sidebar_banner_url|default('/static/bus-guaytacama.svg') }}" alt="Banner" style="width:100%;max-width:140px;border-radius:6px;">
         </div>
       </div>
 
@@ -204,6 +486,15 @@
             <span class="mockup-badge" id="mockup-badge">Ruta Activa</span>
           </div>
 
+          <!-- Maqueta de Pestañas según el estilo seleccionado -->
+          <div id="mockup-tabs-container" data-style="{{ current_settings.tabs_style|default('capsule') }}" style="margin:10px 0 14px 0;">
+            <div class="tabs" style="font-size:10px;padding:3px;margin-bottom:0;">
+              <span class="tab selected" style="padding:4px 10px;font-size:10px;">General</span>
+              <span class="tab" style="padding:4px 8px;font-size:10px;">En Ruta</span>
+              <span class="tab" style="padding:4px 8px;font-size:10px;">Mantenimiento</span>
+            </div>
+          </div>
+
           <!-- Mini Tarjetas Métricas -->
           <div class="mockup-cards">
             <div class="mockup-card">
@@ -221,7 +512,7 @@
             <div class="vehicle-plate-demo">
               <span class="plate-top">ECUADOR</span>
               <span class="plate-number">XAA-1234</span>
-              <span class="plate-unit" id="mockup-unit-badge">UNIDAD #14 · GUAYTACAMA</span>
+              <span class="plate-unit" id="mockup-unit-badge">UNIDAD #14 · {{ current_settings.bus_led_text|default('GUAYTACAMA') }}</span>
             </div>
           </div>
 
@@ -244,4 +535,3 @@
   </aside>
 </div>
 {% endblock %}
-

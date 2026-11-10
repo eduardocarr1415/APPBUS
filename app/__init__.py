@@ -2,6 +2,7 @@
 import json
 import os
 import secrets
+import re
 import sqlite3
 from datetime import date, timedelta
 from html import escape
@@ -51,12 +52,19 @@ def create_app(db_path=None, testing=False):
         return current(request)
 
     def context(request, **more):
-        user=current(request)
-        return {'request':request,'user':user,'csrf':getattr(request.state,'csrf',''),
-                'nav':[{'key':k,'url':url,'icon':icon,'title':label} for k,url,icon,label,p in NAV if not p or has(request,p)],
-                'active':more.get('active',''),'ok':request.query_params.get('ok','')[:160],
-                'perms':getattr(request.state,'perms',set()),'year':date.today().year,
-                'period':db.current_period(),'settings':db.get_settings(),**more}
+        user = current(request)
+        curr_s = db.get_settings()
+        nav_items = []
+        for k, url, icon, label, p in NAV:
+            if not p or has(request, p):
+                dyn_icon = curr_s.get(f'icon_{k}', icon)
+                dyn_title = curr_s.get(f'title_{k}', label)
+                nav_items.append({'key': k, 'url': url, 'icon': dyn_icon, 'title': dyn_title})
+        return {'request': request, 'user': user, 'csrf': getattr(request.state, 'csrf', ''),
+                'nav': nav_items,
+                'active': more.get('active', ''), 'ok': request.query_params.get('ok', '')[:160],
+                'perms': getattr(request.state, 'perms', set()), 'year': date.today().year,
+                'period': db.current_period(), 'settings': curr_s, **more}
 
     def render(request, template, status_code=200,**more):
         return TEMPLATES.TemplateResponse(request,template,context(request,**more),status_code=status_code)
@@ -771,6 +779,33 @@ def create_app(db_path=None, testing=False):
 
         return redir(f'/actas?tab=convocatorias&meeting_id={meeting_id}', 'Convocatoria y notificaciones guardadas correctamente.')
 
+    async def save_uploaded_branding_file(file_obj, prefix: str) -> str | None:
+        if file_obj and hasattr(file_obj, 'filename') and file_obj.filename:
+            fname = file_obj.filename.strip()
+            ext = Path(fname).suffix.lower()
+            if ext not in ('.png', '.jpg', '.jpeg', '.svg', '.webp', '.ico'):
+                raise HTTPException(400, f'Formato no permitido para {prefix}. Solo se admiten PNG, JPG, JPEG, SVG, WEBP o ICO.')
+            content = await file_obj.read()
+            if len(content) > 4 * 1024 * 1024:
+                raise HTTPException(400, f'El archivo de imagen {prefix} no puede superar 4 MB.')
+            branding_dir = app.state.upload_dir / 'branding'
+            branding_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = f"{prefix}_{secrets.token_hex(4)}{ext}"
+            dest = branding_dir / safe_name
+            dest.write_bytes(content)
+            return f"/branding/{safe_name}"
+        return None
+
+    @app.get('/branding/{filename}')
+    def get_branding_asset(filename: str):
+        safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '', filename)
+        target = (app.state.upload_dir / 'branding' / safe).resolve()
+        base_dir = (app.state.upload_dir / 'branding').resolve()
+        if not str(target).startswith(str(base_dir)) or not target.exists():
+            raise HTTPException(404, 'Imagen no encontrada')
+        media = 'image/svg+xml' if safe.endswith('.svg') else ('image/png' if safe.endswith('.png') else ('image/x-icon' if safe.endswith('.ico') else 'image/jpeg'))
+        return FileResponse(target, media_type=media)
+
     @app.get('/configuracion')
     def configuracion_page(request:Request):
         permitted(request, 'configuracion.ver')
@@ -786,17 +821,61 @@ def create_app(db_path=None, testing=False):
         if current(request)['role'] != 'Administrador':
             raise HTTPException(403, 'Apartado reservado exclusivamente para el Administrador.')
         f = await csrf_check(request)
+        curr_s = db.get_settings()
+
+        # Procesar posibles subidas de archivos
+        up_logo = await save_uploaded_branding_file(f.get('header_logo_file'), 'logo')
+        up_banner = await save_uploaded_branding_file(f.get('sidebar_banner_file'), 'banner')
+        up_login = await save_uploaded_branding_file(f.get('login_banner_file'), 'login')
+        up_fav = await save_uploaded_branding_file(f.get('favicon_file'), 'favicon')
+
         new_s = {
-            'company_name': str(f.get('company_name', '')).strip()[:100] or 'Compañía de Transportes Guaytacama',
-            'company_slogan': str(f.get('company_slogan', '')).strip()[:150] or 'Buses Guaytacama · Servicio Interparroquial e Interprovincial',
+            # Identidad y textos
+            'company_name': str(f.get('company_name', '')).strip()[:100] or curr_s.get('company_name', 'Compañía de Transportes Guaytacama'),
+            'company_slogan': str(f.get('company_slogan', '')).strip()[:150] or curr_s.get('company_slogan', 'Buses Guaytacama · Servicio Interparroquial e Interprovincial'),
+            'footer_text': str(f.get('footer_text', '')).strip()[:150] or curr_s.get('footer_text', 'Transportes Guaytacama · Sistema de Control Operativo y Flota'),
+            'login_title': str(f.get('login_title', '')).strip()[:120] or curr_s.get('login_title', 'Sistema de Gestión de Compañía de Buses'),
+            'login_subtitle': str(f.get('login_subtitle', '')).strip()[:180] or curr_s.get('login_subtitle', 'Accede a la plataforma de gestión de la compañía.'),
+
+            # Logos e imágenes
+            'header_logo_url': up_logo or str(f.get('header_logo_url', '')).strip()[:250] or curr_s.get('header_logo_url', '/static/bus-icon.svg'),
+            'sidebar_banner_url': up_banner or str(f.get('sidebar_banner_url', '')).strip()[:250] or curr_s.get('sidebar_banner_url', '/static/bus-guaytacama.svg'),
+            'login_banner_url': up_login or str(f.get('login_banner_url', '')).strip()[:250] or curr_s.get('login_banner_url', '/static/bus-landscape.svg'),
+            'favicon_url': up_fav or str(f.get('favicon_url', '')).strip()[:250] or curr_s.get('favicon_url', '/static/favicon.svg'),
+
+            # Colores y diseño
             'primary_color': str(f.get('primary_color', '#1d4ed8')).strip()[:20],
             'sidebar_color': str(f.get('sidebar_color', '#0f172a')).strip()[:20],
             'accent_color': str(f.get('accent_color', '#f59e0b')).strip()[:20],
+            'page_bg_color': str(f.get('page_bg_color', '#f8fafc')).strip()[:20],
+            'card_bg_color': str(f.get('card_bg_color', '#ffffff')).strip()[:20],
+            'sidebar_text_color': str(f.get('sidebar_text_color', '#e2e8f0')).strip()[:20],
+            'border_radius': str(f.get('border_radius', '14px')).strip()[:10],
+
+            # Tipografía
             'font_family': str(f.get('font_family', 'Inter, system-ui, sans-serif')).strip()[:80],
+            'font_size': str(f.get('font_size', '14px')).strip()[:10],
+
+            # Pestañas
+            'tabs_style': str(f.get('tabs_style', 'capsule')).strip()[:20],
+
+            # Animación de bus
             'bus_animation': '1' if f.get('bus_animation') else '0',
             'animation_duration': str(f.get('animation_duration', '1.8')).strip()[:10],
-            'footer_text': str(f.get('footer_text', '')).strip()[:150] or 'Transportes Guaytacama · Sistema de Control Operativo y Flota'
+            'bus_led_text': str(f.get('bus_led_text', 'GUAYTACAMA')).strip()[:30] or 'GUAYTACAMA',
+            'bus_badge_tag': str(f.get('bus_badge_tag', 'RUTA GUAYTACAMA')).strip()[:40] or 'RUTA GUAYTACAMA',
+            'bus_badge_sub': str(f.get('bus_badge_sub', '')).strip()[:120] or curr_s.get('bus_badge_sub', 'Buses Guaytacama · Puntualidad, Confort y Seguridad'),
         }
+
+        # Iconos y títulos de módulos
+        for mod_key in ('dashboard', 'socios', 'actas', 'finanzas', 'multas', 'unidades', 'reportes', 'usuarios', 'auditoria', 'configuracion'):
+            icon_val = str(f.get(f'icon_{mod_key}', '')).strip()[:10]
+            if icon_val:
+                new_s[f'icon_{mod_key}'] = icon_val
+            title_val = str(f.get(f'title_{mod_key}', '')).strip()[:50]
+            if title_val:
+                new_s[f'title_{mod_key}'] = title_val
+
         db.update_settings(new_s)
         ip = client_ip(request)
         with db.connection() as con:
@@ -822,7 +901,7 @@ def create_app(db_path=None, testing=False):
         # Keep this generic module route last among GET routes to avoid collisions.
         if module_name not in TABS: raise HTTPException(404,'Módulo no encontrado.')
         perm={'socios':'socios.ver','actas':'actas.ver','finanzas':'finanzas.ver','multas':'multas.ver',
-              'unidades':'unidades.ver','reportes':'reportes.ver','usuarios':'usuarios.ver'}[module_name]
+              'unidades':'unidades.ver','vigilancia':'vigilancia.ver','reportes':'reportes.ver','usuarios':'usuarios.ver','auditoria':'auditoria.ver'}.get(module_name)
         permitted(request,perm)
         if module_name=='auditoria' and current(request)['role']!='Administrador':
             raise HTTPException(403,'Apartado reservado exclusivamente para el Administrador.')

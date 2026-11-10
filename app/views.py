@@ -24,14 +24,15 @@ TABS={
  'usuarios':[('usuarios','Usuarios'),('roles','Roles'),('permisos','Permisos'),('auditoria','Auditoría')],
  'auditoria':[('todos','Todo el historial'),('logins','Inicios y accesos'),('operaciones','Operaciones'),('seguridad','Seguridad')],
 }
-TITLES={'socios':'Socios','actas':'Actas y reuniones','finanzas':'Ingresos económicos','multas':'Multas y sanciones','unidades':'Unidades y vehículos','reportes':'Reportes','usuarios':'Usuarios y permisos'}
+TITLES={'socios':'Socios','actas':'Actas y reuniones','finanzas':'Ingresos económicos','multas':'Multas','unidades':'Unidades y vehículos','reportes':'Reportes','usuarios':'Usuarios y permisos','auditoria':'Historial del sistema'}
 SUBTITLES={'socios':'Registro y administración de los socios de la compañía.',
 'actas':'Gestión de actas, reuniones, convocatorias y asistencia.',
 'finanzas':'Control de ingresos, pagos y deudas de la compañía.',
 'multas':'Registro, cobro y seguimiento de multas.',
 'unidades':'Control de vehículos, asignaciones y cambios de unidad.',
 'reportes':'Informes organizados por tema, con periodos y cierres de multas independientes.',
-'usuarios':'Gestión de usuarios, roles, permisos y auditoría.'}
+'usuarios':'Gestión de usuarios, roles, permisos y auditoría.',
+'auditoria':'Registro integral de auditoría, accesos al sistema y operaciones de usuarios.'}
 
 def card(label, value, icon='▦', color='blue'):
     return {'label':label,'value':value,'icon':icon,'color':color}

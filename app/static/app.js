@@ -342,10 +342,22 @@ document.addEventListener('DOMContentLoaded',()=>{
  }
 
  // ==========================================================================
- // CONFIGURACIÓN Y VISTA PREVIA INTERACTIVA EN VIVO (LIVE PREVIEW)
+ // CONFIGURACIÓN Y VISTA PREVIA INTERACTIVA EN VIVO (LIVE PREVIEW EXTENDIDO)
  // ==========================================================================
  const configForm = document.getElementById('config-form');
  if (configForm) {
+  // Pestañas de secciones de configuración
+  document.querySelectorAll('.config-nav-btn').forEach(btn => {
+   btn.addEventListener('click', () => {
+    document.querySelectorAll('.config-nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.config-section-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    const targetId = btn.dataset.target;
+    const targetPanel = document.getElementById(targetId);
+    if (targetPanel) targetPanel.classList.add('active');
+   });
+  });
+
   const inCompanyName = document.getElementById('cfg-company-name');
   const inCompanySlogan = document.getElementById('cfg-company-slogan');
   const inFooterText = document.getElementById('cfg-footer-text');
@@ -355,7 +367,16 @@ document.addEventListener('DOMContentLoaded',()=>{
   const inSidebarHex = document.getElementById('cfg-sidebar-hex');
   const inAccentColor = document.getElementById('cfg-accent-color');
   const inAccentHex = document.getElementById('cfg-accent-hex');
+  const inPageBgColor = document.getElementById('cfg-page-bg-color');
+  const inPageBgHex = document.getElementById('cfg-page-bg-hex');
+  const inCardBgColor = document.getElementById('cfg-card-bg-color');
+  const inCardBgHex = document.getElementById('cfg-card-bg-hex');
+  const inSidebarTextColor = document.getElementById('cfg-sidebar-text-color');
+  const inSidebarTextHex = document.getElementById('cfg-sidebar-text-hex');
+  const inBorderRadius = document.getElementById('cfg-border-radius');
   const inFontFamily = document.getElementById('cfg-font-family');
+  const inTabsStyle = document.getElementById('cfg-tabs-style');
+  const inBusLedText = document.getElementById('cfg-bus-led-text');
 
   const mockBrandTitle = document.getElementById('mockup-brand-title');
   const mockBrandSlogan = document.getElementById('mockup-brand-slogan');
@@ -366,23 +387,68 @@ document.addEventListener('DOMContentLoaded',()=>{
   const mockNavActive = document.getElementById('mockup-nav-active');
   const mockCardAccent = document.getElementById('mockup-card-accent');
   const mockFrame = document.getElementById('live-mockup-frame');
+  const mockMain = document.querySelector('.mockup-main');
+  const mockLogoImg = document.getElementById('mockup-logo-img');
+  const mockBannerImg = document.getElementById('mockup-banner-img');
+  const mockTabsContainer = document.getElementById('mockup-tabs-container');
+  const mockUnitBadge = document.getElementById('mockup-unit-badge');
   const btnDemoAnim = document.getElementById('btn-demo-bus-anim');
 
   function updateMockup() {
-   if (mockBrandTitle && inCompanyName) mockBrandTitle.textContent = inCompanyName.value || 'BusGestión';
+   if (mockBrandTitle && inCompanyName) mockBrandTitle.textContent = inCompanyName.value || 'Buses Guaytacama';
    if (mockBrandSlogan && inCompanySlogan) mockBrandSlogan.textContent = inCompanySlogan.value || '';
    if (mockFooterText && inFooterText) mockFooterText.textContent = inFooterText.value || '';
 
    const primary = inPrimaryColor ? inPrimaryColor.value : '#1d4ed8';
    const sidebar = inSidebarColor ? inSidebarColor.value : '#0f172a';
    const accent = inAccentColor ? inAccentColor.value : '#f59e0b';
+   const pageBg = inPageBgColor ? inPageBgColor.value : '#f8fafc';
+   const cardBg = inCardBgColor ? inCardBgColor.value : '#ffffff';
+   const sidebarText = inSidebarTextColor ? inSidebarTextColor.value : '#e2e8f0';
+   const radius = inBorderRadius ? inBorderRadius.value : '14px';
 
-   if (mockSidebar) mockSidebar.style.background = sidebar;
-   if (mockBtnPrimary) mockBtnPrimary.style.background = primary;
+   if (mockSidebar) {
+    mockSidebar.style.background = sidebar;
+    mockSidebar.querySelectorAll('.mockup-nav-item, .mockup-brand-title, small').forEach(el => {
+     el.style.color = sidebarText;
+    });
+   }
+
+   if (mockMain) mockMain.style.background = pageBg;
+   if (mockBtnPrimary) {
+    mockBtnPrimary.style.background = primary;
+    mockBtnPrimary.style.borderRadius = radius;
+   }
    if (mockAvatar) mockAvatar.style.background = primary;
-   if (mockNavActive) mockNavActive.style.borderLeftColor = accent;
+   if (mockNavActive) {
+    mockNavActive.style.borderLeftColor = accent;
+    mockNavActive.style.color = '#ffffff';
+   }
    if (mockCardAccent) mockCardAccent.style.color = accent;
    if (mockFrame && inFontFamily) mockFrame.style.fontFamily = inFontFamily.value;
+
+   // Update cards inside mockup
+   document.querySelectorAll('.mockup-card').forEach(card => {
+    card.style.background = cardBg;
+    card.style.borderRadius = radius;
+   });
+
+   // Update mockup tabs style
+   if (mockTabsContainer && inTabsStyle) {
+    mockTabsContainer.setAttribute('data-style', inTabsStyle.value);
+   }
+
+   // Update LED text
+   if (mockUnitBadge && inBusLedText) {
+    mockUnitBadge.textContent = 'UNIDAD #14 · ' + (inBusLedText.value || 'GUAYTACAMA');
+   }
+
+   // Update module icons in mockup
+   const iconDash = document.getElementById('cfg-icon-dashboard');
+   const titleDash = document.getElementById('cfg-title-dashboard');
+   if (mockNavActive && (iconDash || titleDash)) {
+    mockNavActive.textContent = (iconDash ? iconDash.value + ' ' : '▦ ') + (titleDash ? titleDash.value : 'Dashboard');
+   }
   }
 
   function bindColorPair(colorInput, hexInput) {
@@ -404,25 +470,96 @@ document.addEventListener('DOMContentLoaded',()=>{
   bindColorPair(inPrimaryColor, inPrimaryHex);
   bindColorPair(inSidebarColor, inSidebarHex);
   bindColorPair(inAccentColor, inAccentHex);
+  bindColorPair(inPageBgColor, inPageBgHex);
+  bindColorPair(inCardBgColor, inCardBgHex);
+  bindColorPair(inSidebarTextColor, inSidebarTextHex);
 
   if (inCompanyName) inCompanyName.addEventListener('input', updateMockup);
   if (inCompanySlogan) inCompanySlogan.addEventListener('input', updateMockup);
   if (inFooterText) inFooterText.addEventListener('input', updateMockup);
   if (inFontFamily) inFontFamily.addEventListener('change', updateMockup);
+  if (inBorderRadius) inBorderRadius.addEventListener('change', updateMockup);
+  if (inBusLedText) inBusLedText.addEventListener('input', updateMockup);
 
+  // Selector de estilo de pestañas
+  document.querySelectorAll('.tabs-style-option').forEach(opt => {
+   opt.addEventListener('click', () => {
+    document.querySelectorAll('.tabs-style-option').forEach(o => o.classList.remove('selected'));
+    opt.classList.add('selected');
+    const styleVal = opt.dataset.style;
+    if (inTabsStyle) inTabsStyle.value = styleVal;
+    updateMockup();
+   });
+  });
+
+  // Selector de presets de colores
   document.querySelectorAll('.btn-preset').forEach(btn => {
    btn.addEventListener('click', () => {
     const p = btn.dataset.primary;
     const s = btn.dataset.sidebar;
     const a = btn.dataset.accent;
+    const bg = btn.dataset.bg || '#f8fafc';
     if (inPrimaryColor) inPrimaryColor.value = p;
     if (inPrimaryHex) inPrimaryHex.value = p.toUpperCase();
     if (inSidebarColor) inSidebarColor.value = s;
     if (inSidebarHex) inSidebarHex.value = s.toUpperCase();
     if (inAccentColor) inAccentColor.value = a;
     if (inAccentHex) inAccentHex.value = a.toUpperCase();
+    if (inPageBgColor) inPageBgColor.value = bg;
+    if (inPageBgHex) inPageBgHex.value = bg.toUpperCase();
     updateMockup();
    });
+  });
+
+  // Previsualización instantánea de subida de imágenes (FileReader)
+  function bindImageUploadPreview(fileInputId, previewImgId, mockupImgId, urlInputId) {
+   const fileInput = document.getElementById(fileInputId);
+   const previewImg = document.getElementById(previewImgId);
+   const mockupImg = document.getElementById(mockupImgId);
+   const urlInput = document.getElementById(urlInputId);
+
+   if (fileInput) {
+    fileInput.addEventListener('change', () => {
+     const file = fileInput.files[0];
+     if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+       if (previewImg) previewImg.src = e.target.result;
+       if (mockupImg) mockupImg.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+     }
+    });
+   }
+
+   if (urlInput) {
+    urlInput.addEventListener('input', () => {
+     if (urlInput.value.trim()) {
+      if (previewImg) previewImg.src = urlInput.value.trim();
+      if (mockupImg) mockupImg.src = urlInput.value.trim();
+     }
+    });
+   }
+  }
+
+  bindImageUploadPreview('cfg-header-logo-file', 'preview-header-logo', 'mockup-logo-img', 'cfg-header-logo-url');
+  bindImageUploadPreview('cfg-sidebar-banner-file', 'preview-sidebar-banner', 'mockup-banner-img', 'cfg-sidebar-banner-url');
+  bindImageUploadPreview('cfg-favicon-file', 'preview-favicon', null, 'cfg-favicon-url');
+  bindImageUploadPreview('cfg-login-banner-file', 'preview-login-banner', null, 'cfg-login-banner-url');
+
+  // Chips de sugerencia rápida de iconos para módulos
+  document.querySelectorAll('.icon-chip').forEach(chip => {
+   chip.addEventListener('click', () => {
+    const targetInput = document.getElementById(chip.dataset.target);
+    if (targetInput) {
+     targetInput.value = chip.textContent.trim();
+     updateMockup();
+    }
+   });
+  });
+
+  document.querySelectorAll('.module-icon-input, .module-title-input').forEach(inp => {
+   inp.addEventListener('input', updateMockup);
   });
 
   if (btnDemoAnim && busOverlay) {

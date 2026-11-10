@@ -274,15 +274,65 @@ class Database:
                     (uid,action,entity,record_id,summary[:350],ip or '127.0.0.1'))
 
     DEFAULT_SETTINGS = {
+        # Identidad y textos
         'company_name': 'Compañía de Transportes Guaytacama',
         'company_slogan': 'Buses Guaytacama · Servicio Interparroquial e Interprovincial',
+        'footer_text': 'Transportes Guaytacama · Sistema de Control Operativo y Flota',
+        'login_title': 'Sistema de Gestión de Compañía de Buses',
+        'login_subtitle': 'Accede a la plataforma de gestión de la compañía.',
+
+        # Logos e imágenes
+        'header_logo_url': '/static/bus-icon.svg',
+        'sidebar_banner_url': '/static/bus-guaytacama.svg',
+        'login_banner_url': '/static/bus-landscape.svg',
+        'favicon_url': '/static/favicon.svg',
+
+        # Colores y estilo
         'primary_color': '#1d4ed8',
         'sidebar_color': '#0f172a',
         'accent_color': '#f59e0b',
+        'page_bg_color': '#f8fafc',
+        'card_bg_color': '#ffffff',
+        'sidebar_text_color': '#e2e8f0',
+        'border_radius': '14px',
+
+        # Tipografía
         'font_family': "Inter, system-ui, -apple-system, sans-serif",
+        'font_size': '14px',
+
+        # Pestañas (Tabs)
+        'tabs_style': 'capsule',  # capsule, underline, pills, segmented
+
+        # Iconos de módulos
+        'icon_dashboard': '▦',
+        'icon_socios': '♙',
+        'icon_actas': '▤',
+        'icon_finanzas': '▥',
+        'icon_multas': '⚒',
+        'icon_unidades': '▣',
+        'icon_reportes': '📈',
+        'icon_usuarios': '👥',
+        'icon_auditoria': '⏱',
+        'icon_configuracion': '⚙',
+
+        # Títulos de módulos
+        'title_dashboard': 'Dashboard',
+        'title_socios': 'Socios',
+        'title_actas': 'Actas y reuniones',
+        'title_finanzas': 'Ingresos económicos',
+        'title_multas': 'Multas',
+        'title_unidades': 'Unidades y vehículos',
+        'title_reportes': 'Reportes',
+        'title_usuarios': 'Usuarios y permisos',
+        'title_auditoria': 'Historial del sistema',
+        'title_configuracion': 'Configurar página',
+
+        # Animación del bus
         'bus_animation': '1',
         'animation_duration': '1.8',
-        'footer_text': 'Transportes Guaytacama · Sistema de Control Operativo y Flota'
+        'bus_led_text': 'GUAYTACAMA',
+        'bus_badge_tag': 'RUTA GUAYTACAMA',
+        'bus_badge_sub': 'Buses Guaytacama · Puntualidad, Confort y Seguridad'
     }
 
     def get_settings(self):

@@ -5,24 +5,29 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>{% block title %}{{ settings.company_name|default('Compañía de Transportes Guaytacama') }}{% endblock %} · {{ settings.company_slogan|default('Buses Guaytacama') }}</title>
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="{{ settings.favicon_url|default('/static/favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css?v=2026.5" defer>
   <style id="dynamic-system-theme">
     :root {
       {% if settings.primary_color %}--primary-color: {{ settings.primary_color }};{% endif %}
       {% if settings.sidebar_color %}--sidebar-bg: {{ settings.sidebar_color }};{% endif %}
       {% if settings.accent_color %}--accent-color: {{ settings.accent_color }};{% endif %}
+      {% if settings.page_bg_color %}--page-bg: {{ settings.page_bg_color }};{% endif %}
+      {% if settings.card_bg_color %}--card-bg: {{ settings.card_bg_color }};{% endif %}
+      {% if settings.sidebar_text_color %}--sidebar-text: {{ settings.sidebar_text_color }};{% endif %}
+      {% if settings.border_radius %}--app-radius: {{ settings.border_radius }};{% endif %}
       {% if settings.font_family %}--app-font: {{ settings.font_family|safe }};{% endif %}
+      {% if settings.font_size %}--base-font-size: {{ settings.font_size }};{% endif %}
     }
   </style>
   <script src="/static/app.js?v=2026.5" defer></script>
 </head>
-<body class="{% if not user %}auth-body{% endif %}">
+<body class="{% if not user %}auth-body{% endif %}" data-tabs-style="{{ settings.tabs_style|default('capsule') }}">
 {% if user %}
 <div class="shell">
   <aside class="sidebar" id="sidebar">
     <a class="brand" href="/">
-      <span class="bus-logo"><img src="/static/bus-icon.svg" alt="Bus" width="40" height="40"></span>
+      <span class="bus-logo"><img src="{{ settings.header_logo_url|default('/static/bus-icon.svg') }}" alt="Logo" width="40" height="40"></span>
       <span class="brand-text">
         <span class="brand-company">{{ settings.company_name|default('Compañía de Transportes Guaytacama') }}</span>
         <small class="brand-slogan">{{ settings.company_slogan|default('Buses Guaytacama · Flota Oficial') }}</small>
@@ -37,8 +42,8 @@
       {% endfor %}
     </nav>
     <div class="sidebar-foot">
-      <img class="bus-illustration" src="/static/bus-guaytacama.svg" alt="Buses Guaytacama">
-      <small style="color:#e2e8f0;font-weight:600;">{{ settings.footer_text|default('Transportes Guaytacama · Flota Operativa') }}</small>
+      <img class="bus-illustration" src="{{ settings.sidebar_banner_url|default('/static/bus-guaytacama.svg') }}" alt="{{ settings.company_name|default('Buses Guaytacama') }}">
+      <small style="color:var(--sidebar-text, #e2e8f0);font-weight:600;">{{ settings.footer_text|default('Transportes Guaytacama · Flota Operativa') }}</small>
     </div>
   </aside>
 
@@ -153,9 +158,9 @@
         <path d="M 170 38 L 340 38 Q 346 38 348 44 L 165 44 Q 166 38 170 38 Z" fill="#cbd5e1"/>
         <rect x="220" y="35" width="60" height="3" rx="1.5" fill="#64748b"/>
 
-        <!-- Electronic LED Route Sign: GUAYTACAMA -->
+        <!-- Electronic LED Route Sign -->
         <rect x="365" y="49" width="85" height="13" rx="3" fill="#090d16" stroke="#475569" stroke-width="1.2"/>
-        <text x="407" y="59" fill="#facc15" font-size="8.5" font-family="'Courier New', monospace" font-weight="900" letter-spacing="1" text-anchor="middle" filter="url(#busGlow)">GUAYTACAMA</text>
+        <text x="407" y="59" fill="#facc15" font-size="8.5" font-family="'Courier New', monospace" font-weight="900" letter-spacing="1" text-anchor="middle" filter="url(#busGlow)">{{ settings.bus_led_text|default('GUAYTACAMA') }}</text>
 
         <!-- Panoramic Front Double Windshield -->
         <path d="M 378 65 L 445 65 L 466 94 L 378 94 Z" fill="url(#windowGlass)"/>
@@ -254,9 +259,9 @@
     </svg>
 
     <div class="bus-status-badge">
-      <span class="badge-tag">RUTA GUAYTACAMA</span>
+      <span class="badge-tag">{{ settings.bus_badge_tag|default('RUTA GUAYTACAMA') }}</span>
       <span id="bus-destination-name" class="badge-dest">Cargando módulo...</span>
-      <span class="badge-sub">Buses Guaytacama · Puntualidad, Confort y Seguridad</span>
+      <span class="badge-sub">{{ settings.bus_badge_sub|default('Buses Guaytacama · Puntualidad, Confort y Seguridad') }}</span>
     </div>
   </div>
 </div>

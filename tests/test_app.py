@@ -715,11 +715,11 @@ def test_multas_pay_flow_and_pagadas_tab(environment):
     assert 'Atraso en turno matutino' in page_paid_after.text
     assert 'Registrar multa' not in page_paid_after.text
 
-    # 8. Módulo de vigilancia usa Multas y no Sanciones
-    vig_page = c.get('/vigilancia')
-    assert vig_page.status_code == 200
-    assert 'Multas del periodo' in vig_page.text
-    assert 'Sanciones' not in vig_page.text
+    # 8. Unificación: solo se usa el término Multas y no Sanciones, vigilancia obsoleta da 404
+    multas_page = c.get('/multas')
+    assert multas_page.status_code == 200
+    assert 'Sanciones' not in multas_page.text
+    assert c.get('/vigilancia').status_code == 404
 
 
 def test_configuracion_only_admin_and_saves_settings(environment):
