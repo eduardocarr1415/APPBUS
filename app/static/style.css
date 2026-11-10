@@ -158,27 +158,38 @@ small {
 
 .sidebar-foot {
     margin-top: auto;
-    background: linear-gradient(160deg, #2961b8aa, transparent);
-    border-top: 1px solid #ffffff16;
-    min-height: 144px;
+    background: linear-gradient(180deg, rgba(30, 58, 138, 0.25), rgba(15, 23, 42, 0.65));
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 14px 10px 12px 10px;
     display: flex;
     justify-content: center;
     align-items: center;
     flex-direction: column;
     text-align: center;
-    gap: 4px
+    gap: 8px;
 }
 
 .sidebar-foot small {
-    color: #c6dbfa
+    color: #e2e8f0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
 }
 
 .bus-illustration {
-    width: 190px;
-    max-width: 95%;
-    height: 100px;
+    width: 216px;
+    max-width: 96%;
+    height: auto;
     object-fit: contain;
-    opacity: .7
+    opacity: 1;
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.12);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.bus-illustration:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(251, 191, 36, 0.35);
 }
 
 .bus-outline {
@@ -2182,20 +2193,10 @@ body {
 }
 
 .animated-bus-group {
-    animation: busSuspensionVibe 0.35s ease-in-out infinite alternate;
+    animation: busSuspensionVibe 0.38s ease-in-out infinite alternate;
 }
 
 @keyframes busSuspensionVibe {
     0% { transform: translateY(0); }
-    100% { transform: translateY(-2.5px); }
-}
-
-.spinning-wheel {
-    animation: wheelRotateSpin 0.32s linear infinite;
-    transform-box: fill-box;
-    transform-origin: center;
-}
-
-@keyframes wheelRotateSpin {
-    100% { transform: rotate(360deg); }
+    100% { transform: translateY(-1.5px); }
 }
