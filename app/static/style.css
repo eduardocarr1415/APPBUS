@@ -601,34 +601,45 @@ small {
 }
 
 .tabs {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 6px;
+    background: #ffffff;
+    padding: 6px;
+    border-radius: 14px;
+    border: 1px solid #dbeafe;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+    margin-bottom: 24px;
     overflow-x: auto;
-    scrollbar-width: thin;
-    border-bottom: 1px solid #cbd9ec;
-    margin-bottom: 20px;
-    padding-bottom: 4px
+    max-width: 100%;
 }
 
 .tab {
-    padding: 13px 18px;
-    color: #244064;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 18px;
+    color: #475569;
     font-weight: 600;
+    font-size: 13.5px;
     white-space: nowrap;
-    border-radius: 9px 9px 4px 4px;
-    font-size: 13px
+    border-radius: 10px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+    border: 1px solid transparent;
 }
 
 .tab:hover {
-    color: #0055d8;
-    background: #edf4ff
+    color: var(--primary-color, #1d4ed8);
+    background: #f1f5f9;
 }
 
 .tab.selected {
-    color: #fff;
-    background: linear-gradient(180deg, #247fff, #0063ea);
-    box-shadow: 0 3px 6px #1660d824
+    color: #fff !important;
+    background: var(--primary-color, #1d4ed8) !important;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(29, 78, 216, 0.28);
+    border-color: var(--primary-color, #1d4ed8);
 }
 
 .content-columns {
@@ -2141,4 +2152,50 @@ body {
     font-size: 8px;
     color: #94a3b8;
     text-align: center;
+}
+
+
+/* Tarjeta y contenedor del Bus Guaytacama en animación */
+.bus-stage-card {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 92%;
+    max-width: 620px;
+    padding: 22px;
+    background: #0b1329;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 30px 65px rgba(0, 0, 0, 0.8), 0 0 45px rgba(37, 99, 235, 0.35);
+    overflow: hidden;
+}
+
+.animated-highway-lines line {
+    animation: roadStripeRoll 0.4s linear infinite;
+}
+
+@keyframes roadStripeRoll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-56px); }
+}
+
+.animated-bus-group {
+    animation: busSuspensionVibe 0.35s ease-in-out infinite alternate;
+}
+
+@keyframes busSuspensionVibe {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-2.5px); }
+}
+
+.spinning-wheel {
+    animation: wheelRotateSpin 0.32s linear infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes wheelRotateSpin {
+    100% { transform: rotate(360deg); }
 }

@@ -750,15 +750,15 @@ def create_app(db_path=None, testing=False):
             raise HTTPException(403, 'Apartado reservado exclusivamente para el Administrador.')
         f = await csrf_check(request)
         new_s = {
-            'company_name': str(f.get('company_name', '')).strip()[:100] or 'Cooperativa de Transportes BusGestión',
-            'company_slogan': str(f.get('company_slogan', '')).strip()[:150] or 'Línea Interprovincial y Urbana · Control de Flota',
+            'company_name': str(f.get('company_name', '')).strip()[:100] or 'Compañía de Transportes Guaytacama',
+            'company_slogan': str(f.get('company_slogan', '')).strip()[:150] or 'Buses Guaytacama · Servicio Interparroquial e Interprovincial',
             'primary_color': str(f.get('primary_color', '#1d4ed8')).strip()[:20],
             'sidebar_color': str(f.get('sidebar_color', '#0f172a')).strip()[:20],
             'accent_color': str(f.get('accent_color', '#f59e0b')).strip()[:20],
             'font_family': str(f.get('font_family', 'Inter, system-ui, sans-serif')).strip()[:80],
             'bus_animation': '1' if f.get('bus_animation') else '0',
             'animation_duration': str(f.get('animation_duration', '1.8')).strip()[:10],
-            'footer_text': str(f.get('footer_text', '')).strip()[:150] or 'BusGestión · Sistema Operativo de Flota y Pasajeros'
+            'footer_text': str(f.get('footer_text', '')).strip()[:150] or 'Transportes Guaytacama · Sistema de Control Operativo y Flota'
         }
         db.update_settings(new_s)
         ip = client_ip(request)

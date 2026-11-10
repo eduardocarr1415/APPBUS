@@ -713,6 +713,6 @@ def test_configuracion_only_admin_and_saves_settings(environment):
     reset_resp = c.post('/configuracion/reset', data={'_csrf': token_reset}, follow_redirects=False)
     assert reset_resp.status_code == 303
     s_reset = db.get_settings()
-    assert s_reset['company_name'] == 'Cooperativa de Transportes BusGestión'
+    assert s_reset['company_name'] == 'Compañía de Transportes Guaytacama'
 
 

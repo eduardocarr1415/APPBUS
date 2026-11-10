@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>{% block title %}{{ settings.company_name|default('BusGestión') }}{% endblock %} · {{ settings.company_slogan|default('Compañía de Buses') }}</title>
+  <title>{% block title %}{{ settings.company_name|default('Compañía de Transportes Guaytacama') }}{% endblock %} · {{ settings.company_slogan|default('Buses Guaytacama') }}</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=2026.4" defer>
+  <link rel="stylesheet" href="/static/style.css?v=2026.5" defer>
   <style id="dynamic-system-theme">
     :root {
       {% if settings.primary_color %}--primary-color: {{ settings.primary_color }};{% endif %}
@@ -15,7 +15,7 @@
       {% if settings.font_family %}--app-font: {{ settings.font_family|safe }};{% endif %}
     }
   </style>
-  <script src="/static/app.js?v=2026.4" defer></script>
+  <script src="/static/app.js?v=2026.5" defer></script>
 </head>
 <body class="{% if not user %}auth-body{% endif %}">
 {% if user %}
@@ -24,8 +24,8 @@
     <a class="brand" href="/">
       <span class="bus-logo"><img src="/static/bus-icon.svg" alt="Bus" width="40" height="40"></span>
       <span class="brand-text">
-        <span class="brand-company">{{ settings.company_name|default('BusGestión') }}</span>
-        <small class="brand-slogan">{{ settings.company_slogan|default('Compañía de Buses') }}</small>
+        <span class="brand-company">{{ settings.company_name|default('Compañía de Transportes Guaytacama') }}</span>
+        <small class="brand-slogan">{{ settings.company_slogan|default('Buses Guaytacama · Flota Oficial') }}</small>
       </span>
     </a>
     <nav class="side-nav" aria-label="Navegación principal">
@@ -37,8 +37,8 @@
       {% endfor %}
     </nav>
     <div class="sidebar-foot">
-      <img class="bus-illustration" src="/static/bus-landscape.svg" alt="Ilustración de bus">
-      <small>{{ settings.footer_text|default('Gestión organizada y segura') }}</small>
+      <img class="bus-illustration" src="/static/bus-guaytacama.svg" alt="Buses Guaytacama" style="width:210px;height:auto;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.3);margin-bottom:8px;">
+      <small style="color:#e2e8f0;font-weight:600;">{{ settings.footer_text|default('Transportes Guaytacama · Flota Operativa') }}</small>
     </div>
   </aside>
 
@@ -69,7 +69,7 @@
     </main>
 
     <footer class="page-footer">
-      {{ settings.footer_text|default('BusGestión · Sistema local con SQLite') }} · {{ year }}
+      {{ settings.footer_text|default('Transportes Guaytacama · Sistema local con SQLite') }} · {{ year }}
     </footer>
   </div>
 </div>
@@ -77,59 +77,175 @@
 {% if settings.bus_animation|default('1') == '1' %}
 <div id="bus-transition-overlay" class="bus-transition-overlay" aria-hidden="true" style="display:none;" data-duration="{{ settings.animation_duration|default('1.8') }}">
   <div class="bus-transition-backdrop"></div>
-  <div class="bus-stage">
-    <div class="bus-scenery">
-      <div class="scenery-mountain"></div>
-      <div class="scenery-highway">
-        <div class="highway-lanes"></div>
-      </div>
-    </div>
-    <div class="bus-runner-container">
-      <div class="bus-runner">
-        <svg class="bus-animated-svg" viewBox="0 0 320 120" width="260" height="98">
-          <defs>
-            <linearGradient id="busGrad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stop-color="var(--primary-color, #1d4ed8)" />
-              <stop offset="100%" stop-color="#0f172a" />
-            </linearGradient>
-            <linearGradient id="beamGrad" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stop-color="rgba(254, 240, 138, 0.9)" />
-              <stop offset="100%" stop-color="rgba(254, 240, 138, 0)" />
-            </linearGradient>
-          </defs>
-          <polygon points="275,68 320,48 320,90" fill="url(#beamGrad)" />
-          <rect x="25" y="20" width="250" height="64" rx="12" fill="url(#busGrad)" />
-          <rect x="80" y="14" width="120" height="8" rx="3" fill="#cbd5e1" />
-          <rect x="210" y="25" width="55" height="10" rx="2" fill="#0f172a" stroke="#475569" stroke-width="1" />
-          <text x="237" y="33" fill="#facc15" font-size="7" font-family="monospace" font-weight="bold" text-anchor="middle">EN RUTA</text>
-          <rect x="35" y="34" width="30" height="24" rx="2" fill="#93c5fd" opacity="0.9" />
-          <rect x="72" y="34" width="36" height="24" rx="2" fill="#93c5fd" opacity="0.9" />
-          <rect x="114" y="34" width="36" height="24" rx="2" fill="#93c5fd" opacity="0.9" />
-          <rect x="156" y="34" width="36" height="24" rx="2" fill="#93c5fd" opacity="0.9" />
-          <rect x="198" y="34" width="20" height="46" rx="2" fill="#334155" opacity="0.95" />
-          <rect x="224" y="34" width="45" height="24" rx="2" fill="#bfdbfe" opacity="0.95" />
-          <path d="M 25 66 L 275 66 L 273 72 L 25 72 Z" fill="var(--accent-color, #f59e0b)" />
-          <circle cx="272" cy="69" r="4" fill="#fef08a" />
-          <rect x="23" y="60" width="3" height="10" rx="1" fill="#ef4444" />
-          <g class="bus-wheel wheel-front" transform="translate(225, 84)">
-            <circle cx="0" cy="0" r="15" fill="#1e293b" stroke="#0f172a" stroke-width="3" />
-            <circle cx="0" cy="0" r="8" fill="#94a3b8" />
-            <line x1="-8" y1="0" x2="8" y2="0" stroke="#0f172a" stroke-width="2" />
-            <line x1="0" y1="-8" x2="0" y2="8" stroke="#0f172a" stroke-width="2" />
-          </g>
-          <g class="bus-wheel wheel-rear" transform="translate(75, 84)">
-            <circle cx="0" cy="0" r="15" fill="#1e293b" stroke="#0f172a" stroke-width="3" />
-            <circle cx="0" cy="0" r="8" fill="#94a3b8" />
-            <line x1="-8" y1="0" x2="8" y2="0" stroke="#0f172a" stroke-width="2" />
-            <line x1="0" y1="-8" x2="0" y2="8" stroke="#0f172a" stroke-width="2" />
-          </g>
-        </svg>
-      </div>
-    </div>
+  <div class="bus-stage-card">
+    <svg class="bus-animation-stage-svg" viewBox="0 0 540 180" width="100%" height="auto">
+      <defs>
+        <!-- Night sky gradient -->
+        <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#071228"/>
+          <stop offset="60%" stop-color="#122549"/>
+          <stop offset="100%" stop-color="#1e3a6a"/>
+        </linearGradient>
+        <!-- Bus paint gradient -->
+        <linearGradient id="busPaintGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="var(--primary-color, #1e40af)"/>
+          <stop offset="35%" stop-color="#2563eb"/>
+          <stop offset="70%" stop-color="#3b82f6"/>
+          <stop offset="100%" stop-color="#1d4ed8"/>
+        </linearGradient>
+        <!-- Headlight beam gradient -->
+        <linearGradient id="headlightCone" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="rgba(254, 240, 138, 0.95)"/>
+          <stop offset="45%" stop-color="rgba(254, 240, 138, 0.35)"/>
+          <stop offset="100%" stop-color="rgba(254, 240, 138, 0)"/>
+        </linearGradient>
+        <!-- Window glass gradient -->
+        <linearGradient id="windowGlass" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#bfdbfe" stop-opacity="0.95"/>
+          <stop offset="50%" stop-color="#60a5fa" stop-opacity="0.8"/>
+          <stop offset="100%" stop-color="#1e3a8a" stop-opacity="0.95"/>
+        </linearGradient>
+        <!-- Filter for glow effects -->
+        <filter id="busGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="2.5" result="blur"/>
+          <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+        </filter>
+      </defs>
+
+      <!-- Sky Background -->
+      <rect x="0" y="0" width="540" height="135" rx="14" fill="url(#skyGrad)"/>
+
+      <!-- Stars -->
+      <circle cx="80" cy="25" r="1.2" fill="#ffffff" opacity="0.8"/>
+      <circle cx="160" cy="18" r="1.5" fill="#fef08a" opacity="0.9"/>
+      <circle cx="270" cy="30" r="1" fill="#ffffff" opacity="0.7"/>
+      <circle cx="420" cy="22" r="1.3" fill="#ffffff" opacity="0.85"/>
+
+      <!-- Andes / Cotopaxi Silhouette -->
+      <polygon points="30,135 110,65 190,135" fill="#1e293b" opacity="0.45"/>
+      <polygon points="150,135 250,45 350,135" fill="#334155" opacity="0.55"/>
+      <!-- Snow peak of Cotopaxi -->
+      <polygon points="230,62 250,45 270,62 258,68 250,64 242,68" fill="#f8fafc" opacity="0.85"/>
+      <polygon points="310,135 410,75 510,135" fill="#1e293b" opacity="0.45"/>
+
+      <!-- Road Asphalt (Surface exactly at y=135) -->
+      <rect x="0" y="135" width="540" height="45" fill="#090d16"/>
+      <line x1="0" y1="135" x2="540" y2="135" stroke="#64748b" stroke-width="2.5"/>
+      <line x1="0" y1="138" x2="540" y2="138" stroke="#ffffff" stroke-width="2" opacity="0.7"/>
+
+      <!-- Fast Moving Yellow Dashed Highway Lines -->
+      <g class="animated-highway-lines">
+        <line x1="-120" y1="160" x2="660" y2="160" stroke="#facc15" stroke-width="4.5" stroke-dasharray="32 24"/>
+      </g>
+
+      <!-- Headlight beam illuminating the road -->
+      <polygon points="460,118 540,95 540,155 460,126" fill="url(#headlightCone)"/>
+
+      <!-- THE BUS: GUAYTACAMA INTERPROVINCIAL COACH (With suspension bounce) -->
+      <g class="animated-bus-group">
+        <!-- Shadow on the pavement -->
+        <ellipse cx="275" cy="135" rx="195" ry="4.5" fill="#000000" opacity="0.8"/>
+
+        <!-- Main Aerodynamic Coach Body -->
+        <path d="M 90 52 Q 100 44 125 44 L 415 44 Q 442 44 456 60 L 472 95 Q 476 106 473 118 L 90 118 Q 82 118 82 108 L 82 62 Q 82 52 90 52 Z" fill="url(#busPaintGrad)"/>
+
+        <!-- Roof AC pod & spoiler -->
+        <path d="M 170 38 L 340 38 Q 346 38 348 44 L 165 44 Q 166 38 170 38 Z" fill="#cbd5e1"/>
+        <rect x="220" y="35" width="60" height="3" rx="1.5" fill="#64748b"/>
+
+        <!-- Electronic LED Route Sign: GUAYTACAMA -->
+        <rect x="365" y="49" width="85" height="13" rx="3" fill="#090d16" stroke="#475569" stroke-width="1.2"/>
+        <text x="407" y="59" fill="#facc15" font-size="8.5" font-family="'Courier New', monospace" font-weight="900" letter-spacing="1" text-anchor="middle" filter="url(#busGlow)">GUAYTACAMA</text>
+
+        <!-- Panoramic Front Double Windshield -->
+        <path d="M 378 65 L 445 65 L 466 94 L 378 94 Z" fill="url(#windowGlass)"/>
+        <line x1="420" y1="65" x2="425" y2="94" stroke="#0f172a" stroke-width="2"/>
+        <!-- Windshield wiper -->
+        <line x1="432" y1="92" x2="445" y2="78" stroke="#1e293b" stroke-width="1.8"/>
+
+        <!-- Driver Door Window -->
+        <rect x="340" y="65" width="34" height="29" rx="3" fill="url(#windowGlass)"/>
+
+        <!-- Passenger Panoramic Windows -->
+        <rect x="94" y="58" width="42" height="32" rx="4" fill="url(#windowGlass)"/>
+        <rect x="141" y="58" width="45" height="32" rx="4" fill="url(#windowGlass)"/>
+        <rect x="191" y="58" width="45" height="32" rx="4" fill="url(#windowGlass)"/>
+        <rect x="241" y="58" width="45" height="32" rx="4" fill="url(#windowGlass)"/>
+        <rect x="291" y="58" width="44" height="32" rx="4" fill="url(#windowGlass)"/>
+
+        <!-- Passenger profiles in windows -->
+        <circle cx="115" cy="72" r="5" fill="#0f172a" opacity="0.65"/>
+        <circle cx="163" cy="72" r="5" fill="#0f172a" opacity="0.65"/>
+        <circle cx="213" cy="72" r="5" fill="#0f172a" opacity="0.65"/>
+        <circle cx="263" cy="72" r="5" fill="#0f172a" opacity="0.65"/>
+        <circle cx="313" cy="72" r="5" fill="#0f172a" opacity="0.65"/>
+
+        <!-- Dynamic Transport Swoosh Stripes (Guaytacama Livery) -->
+        <path d="M 82 96 Q 220 84 380 75 L 452 87 L 468 104 L 82 110 Z" fill="var(--accent-color, #f59e0b)"/>
+        <path d="M 82 100 Q 240 88 400 81 L 435 88 L 82 107 Z" fill="#ffffff" opacity="0.95"/>
+        <!-- Lettering: BUSES GUAYTACAMA -->
+        <text x="235" y="105" fill="#0f172a" font-size="8.5" font-family="'Segoe UI', Roboto, sans-serif" font-weight="900" letter-spacing="1.5">BUSES GUAYTACAMA</text>
+
+        <!-- Luggage bay hatches (Maleteros) -->
+        <line x1="175" y1="110" x2="175" y2="124" stroke="#1e3a8a" stroke-width="1.5"/>
+        <line x1="240" y1="110" x2="240" y2="124" stroke="#1e3a8a" stroke-width="1.5"/>
+        <line x1="305" y1="110" x2="305" y2="124" stroke="#1e3a8a" stroke-width="1.5"/>
+        <rect x="195" y="116" width="8" height="2" rx="1" fill="#cbd5e1"/>
+        <rect x="260" y="116" width="8" height="2" rx="1" fill="#cbd5e1"/>
+
+        <!-- Aerodynamic Coach Side Mirrors ("Orejas") -->
+        <path d="M 435 52 Q 455 48 462 58" stroke="#0f172a" stroke-width="2.5" fill="none"/>
+        <rect x="459" y="56" width="4.5" height="14" rx="2" fill="#0f172a"/>
+        <rect x="460" y="58" width="2.5" height="10" rx="1" fill="#94a3b8"/>
+
+        <!-- Dual Headlights (Xenon Projectors) -->
+        <circle cx="468" cy="111" r="5" fill="#fef08a" filter="url(#busGlow)"/>
+        <circle cx="468" cy="111" r="2.5" fill="#ffffff"/>
+        <circle cx="461" cy="114" r="3" fill="#fde047"/>
+
+        <!-- Rear Taillights -->
+        <rect x="80" y="98" width="4" height="14" rx="1.5" fill="#ef4444" filter="url(#busGlow)"/>
+
+        <!-- WHEEL 1: FRONT WHEEL (Center: cx=405, cy=118, r=17 -> Bottom: 118+17=135 EXACT ON ASPHALT) -->
+        <g class="spinning-wheel" transform="translate(405, 118)">
+          <circle cx="0" cy="0" r="17" fill="#090d16" stroke="#1e293b" stroke-width="2.5"/>
+          <circle cx="0" cy="0" r="10.5" fill="#e2e8f0" stroke="#0f172a" stroke-width="1.5"/>
+          <circle cx="0" cy="0" r="4.5" fill="#475569"/>
+          <!-- Spokes rotating -->
+          <line x1="-10" y1="0" x2="10" y2="0" stroke="#0f172a" stroke-width="2"/>
+          <line x1="0" y1="-10" x2="0" y2="10" stroke="#0f172a" stroke-width="2"/>
+          <line x1="-7" y1="-7" x2="7" y2="7" stroke="#0f172a" stroke-width="1.5"/>
+          <line x1="-7" y1="7" x2="7" y2="-7" stroke="#0f172a" stroke-width="1.5"/>
+        </g>
+
+        <!-- WHEEL 2: REAR DRIVE WHEEL (Center: cx=175, cy=118, r=17 -> Bottom: 118+17=135 EXACT ON ASPHALT) -->
+        <g class="spinning-wheel" transform="translate(175, 118)">
+          <circle cx="0" cy="0" r="17" fill="#090d16" stroke="#1e293b" stroke-width="2.5"/>
+          <circle cx="0" cy="0" r="10.5" fill="#e2e8f0" stroke="#0f172a" stroke-width="1.5"/>
+          <circle cx="0" cy="0" r="4.5" fill="#475569"/>
+          <line x1="-10" y1="0" x2="10" y2="0" stroke="#0f172a" stroke-width="2"/>
+          <line x1="0" y1="-10" x2="0" y2="10" stroke="#0f172a" stroke-width="2"/>
+          <line x1="-7" y1="-7" x2="7" y2="7" stroke="#0f172a" stroke-width="1.5"/>
+          <line x1="-7" y1="7" x2="7" y2="-7" stroke="#0f172a" stroke-width="1.5"/>
+        </g>
+
+        <!-- WHEEL 3: REAR TAG WHEEL (Center: cx=135, cy=118, r=17 -> Bottom: 118+17=135 EXACT ON ASPHALT) -->
+        <g class="spinning-wheel" transform="translate(135, 118)">
+          <circle cx="0" cy="0" r="17" fill="#090d16" stroke="#1e293b" stroke-width="2.5"/>
+          <circle cx="0" cy="0" r="10.5" fill="#e2e8f0" stroke="#0f172a" stroke-width="1.5"/>
+          <circle cx="0" cy="0" r="4.5" fill="#475569"/>
+          <line x1="-10" y1="0" x2="10" y2="0" stroke="#0f172a" stroke-width="2"/>
+          <line x1="0" y1="-10" x2="0" y2="10" stroke="#0f172a" stroke-width="2"/>
+          <line x1="-7" y1="-7" x2="7" y2="7" stroke="#0f172a" stroke-width="1.5"/>
+          <line x1="-7" y1="7" x2="7" y2="-7" stroke="#0f172a" stroke-width="1.5"/>
+        </g>
+      </g>
+    </svg>
+
     <div class="bus-status-badge">
-      <span class="badge-tag">CONDUCIENDO</span>
+      <span class="badge-tag">RUTA GUAYTACAMA</span>
       <span id="bus-destination-name" class="badge-dest">Cargando módulo...</span>
-      <span class="badge-sub">¡Buen viaje! Flota operativa al día</span>
+      <span class="badge-sub">Buses Guaytacama · Puntualidad, Confort y Seguridad</span>
     </div>
   </div>
 </div>

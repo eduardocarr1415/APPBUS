@@ -223,15 +223,15 @@ class Database:
                     (uid,action,entity,record_id,summary[:350],ip or '127.0.0.1'))
 
     DEFAULT_SETTINGS = {
-        'company_name': 'Cooperativa de Transportes BusGestión',
-        'company_slogan': 'Línea Interprovincial y Urbana · Control de Flota',
+        'company_name': 'Compañía de Transportes Guaytacama',
+        'company_slogan': 'Buses Guaytacama · Servicio Interparroquial e Interprovincial',
         'primary_color': '#1d4ed8',
         'sidebar_color': '#0f172a',
         'accent_color': '#f59e0b',
         'font_family': "Inter, system-ui, -apple-system, sans-serif",
         'bus_animation': '1',
         'animation_duration': '1.8',
-        'footer_text': 'BusGestión · Sistema Operativo de Flota y Pasajeros'
+        'footer_text': 'Transportes Guaytacama · Sistema de Control Operativo y Flota'
     }
 
     def get_settings(self):
