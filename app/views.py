@@ -39,7 +39,8 @@ def card(label, value, icon='▦', color='blue'):
 def table(headers, rows, keys=None):
     return {'headers':headers,'rows':rows,'keys':keys or headers}
 
-def modules(db, key, tab, role_name='', socio_id=None):
+def modules(db, key, tab, role_name='', socio_id=None, weekly_from='', weekly_to='',
+            weekly_list=False, weekly_state=''):
     """Return safe structured data; HTML is escaped by Jinja templates."""
     p=db.current_period(); pid=p['id']
     result={'cards':[],'headers':[],'rows':[],'section':'','new_kind':None,'new_label':'Nuevo registro','side_title':None,'side_rows':[]}
@@ -95,8 +96,40 @@ def modules(db, key, tab, role_name='', socio_id=None):
             settable('Deudas y saldos pendientes',['ID','Socio','Concepto','Total','Abonado','Pendiente'],'''SELECT d.id,s.name,d.concept,d.amount_cents,d.paid_cents,(d.amount_cents-d.paid_cents) remaining FROM debts d JOIN socios s ON s.id=d.socio_id WHERE 1=1'''+(' AND d.socio_id=?' if own else '')+' ORDER BY d.id DESC LIMIT 150',(socio_id,) if own else (),lambda x:[x['id'],x['name'],x['concept'],fmt(x['amount_cents']),fmt(x['paid_cents']),fmt(x['remaining'])])
             R.update(new_kind='deudas',new_label='Registrar deuda')
         elif tab=='marcaciones':
-            settable('Marcación semanal',['ID','Socio','Semana','Concepto','Valor','Estado'],'''SELECT w.id,s.name,w.week_start,w.concept,w.amount_cents,w.state FROM weekly_marks w JOIN socios s ON s.id=w.socio_id WHERE w.period_id=?'''+(' AND w.socio_id=?' if own else '')+' ORDER BY w.week_start DESC',own_args,lambda x:[x['id'],x['name'],x['week_start'],x['concept'],fmt(x['amount_cents']),x['state']])
-            R.update(new_kind='marcaciones',new_label='Nueva marcación')
+            clauses=[]
+            args=[]
+            if weekly_from:
+                clauses.append('w.week_start>=?')
+                args.append(weekly_from)
+            if weekly_to:
+                clauses.append('w.week_start<=?')
+                args.append(weekly_to)
+            if own:
+                clauses.append('w.socio_id=?')
+                args.append(socio_id)
+            where=' WHERE '+' AND '.join(clauses) if clauses else ''
+            totals=db.one('''SELECT COALESCE(SUM(w.paid_cents),0) AS collected,
+                COALESCE(SUM(w.amount_cents-w.paid_cents),0) AS pending
+                FROM weekly_marks w'''+where,args)
+            dates=db.all('''SELECT w.week_start,COUNT(*) AS socios,
+                COALESCE(SUM(w.paid_cents),0) AS collected,
+                COALESCE(SUM(w.amount_cents-w.paid_cents),0) AS pending
+                FROM weekly_marks w'''+where+' GROUP BY w.week_start ORDER BY w.week_start DESC',args)
+            mark_clauses=clauses.copy()
+            mark_args=args.copy()
+            if weekly_state:
+                mark_clauses.append('w.state=?')
+                mark_args.append(weekly_state)
+            mark_where=' WHERE '+' AND '.join(mark_clauses) if mark_clauses else ''
+            marks=db.all('''SELECT w.id,w.socio_id,s.name,w.week_start,w.amount_cents,w.paid_cents,w.state,
+                w.paid_at FROM weekly_marks w JOIN socios s ON s.id=w.socio_id'''
+                +mark_where+' ORDER BY w.week_start DESC,s.name',mark_args) if weekly_list else []
+            R['cards']=[card('Total recaudado',fmt(totals['collected']),'✓','green'),
+                        card('Total pendiente',fmt(totals['pending']),'◇','orange')]
+            R.update(section='Marcación semanal',weekly_dates=dates,weekly_marks=marks,
+                     weekly_from=weekly_from,weekly_to=weekly_to,weekly_state=weekly_state,
+                     show_weekly_list=weekly_list,
+                     new_kind=None)
         R['side_title']='Periodo activo'
         R['side_rows']=[('Desde',p['starts']),('Hasta',p['ends']),('Estado','Cerrado' if p['closed_at'] else 'Abierto'),('Cobrado',fmt(total_income+total_pay))]
     elif key=='multas':

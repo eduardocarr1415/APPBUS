@@ -118,6 +118,7 @@ def test_report_outputs_and_period_close_guard(environment):
     finances_page=c.get('/reportes?tab=financieros')
     assert finances_page.status_code==200 and 'Informe gerencial mensual' in finances_page.text
     assert finances_page.text.count('Ingresos y pagos')==1
+
     assert 'Reportes disponibles' not in finances_page.text
     assert c.get('/reportes?tab=cierre').status_code==200
     assert c.get('/vigilancia').status_code==404
@@ -790,3 +791,128 @@ def test_configuracion_only_admin_and_saves_settings(environment):
     assert s_reset['company_name'] == 'Compañía de Transportes Guaytacama'
 
 
+def test_weekly_marks_are_created_searched_and_paid_as_income(environment):
+    app,db,c,sid,other,*_=environment
+    today=date.today().isoformat()
+    login(c)
+    form=c.get('/marcaciones/nueva')
+    assert form.status_code==200 and 'Socio Uno' in form.text and 'Socio Dos' in form.text
+    assert 'name="amount"' in form.text and f'name="amount_{sid}"' not in form.text
+    created=post(c,'/marcaciones/nueva',{'week_start':today,
+        'amount':'12.50'})
+    assert created.status_code==303
+    marks=db.all('SELECT * FROM weekly_marks WHERE week_start=? ORDER BY socio_id',(today,))
+    assert [mark['amount_cents'] for mark in marks]==[1250,1250]
+    assert all(mark['state']=='Pendiente' for mark in marks)
+    assert all(mark['paid_cents']==0 for mark in marks)
+    duplicate_create=post(c,'/marcaciones/nueva',{'week_start':today,
+        'amount':'20'})
+    assert duplicate_create.status_code==400
+    assert db.one('SELECT COUNT(*) AS n FROM weekly_marks WHERE week_start=?',(today,))['n']==2
+
+    history=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}')
+    assert history.status_code==200
+    assert 'Socios y estado de pago' not in history.text
+    assert 'Ver lista' in history.text and 'S/ 25.00' in history.text
+    history=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}&lista=1')
+    assert 'Socio Uno' in history.text and 'Socio Dos' in history.text
+    assert history.text.count('12.50') >= 2 and 'Registrar abono' in history.text
+    assert '<th>Medio</th>' not in history.text
+    assert 'weekly-payment-form' in history.text and 'weekly-date-filter' in history.text
+    assert 'weekly-status-filter' in history.text
+
+    partial=post(c,f'/marcaciones/{marks[0]["id"]}/pagar',
+        {'amount':'5.00'})
+    assert partial.status_code==303
+    mark=db.one('SELECT * FROM weekly_marks WHERE id=?',(marks[0]['id'],))
+    income=db.one('SELECT * FROM incomes WHERE id=?',(mark['income_id'],))
+    assert mark['state']=='Pendiente' and mark['paid_cents']==500
+    assert mark['payment_method']=='Efectivo'
+    assert income['category']=='Marcación semanal'
+    assert income['amount_cents']==500 and income['socio_id']==sid
+    assert income['method']=='Efectivo' and income['day']==today
+    assert db.one("SELECT COUNT(*) AS n FROM incomes WHERE category='Marcación semanal'")['n']==1
+    overpayment=post(c,f'/marcaciones/{marks[0]["id"]}/pagar',
+        {'amount':'8.00'})
+    assert overpayment.status_code==400
+    completed=post(c,f'/marcaciones/{marks[0]["id"]}/pagar',
+        {'amount':'7.50'})
+    assert completed.status_code==303
+    mark=db.one('SELECT * FROM weekly_marks WHERE id=?',(marks[0]['id'],))
+    assert mark['state']=='Pagado' and mark['paid_cents']==1250
+    assert db.one("SELECT COUNT(*) AS n FROM incomes WHERE category='Marcación semanal'")['n']==2
+    duplicate=post(c,f'/marcaciones/{marks[0]["id"]}/pagar',
+        {'amount':'1.00'})
+    assert duplicate.status_code==400
+
+    searched=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}&lista=1')
+    assert 'Total recaudado' in searched.text and 'Pagado' in searched.text
+    assert 'Pendiente' in searched.text and 'Registrar abono' in searched.text
+    paid_only=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}&lista=1&estado=Pagado')
+    assert 'Socio Uno' in paid_only.text and 'Socio Dos' not in paid_only.text
+    pending_only=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}&lista=1&estado=Pendiente')
+    assert 'Socio Dos' in pending_only.text and 'Socio Uno' not in pending_only.text
+    assert 'value="Pendiente" selected' in pending_only.text
+    assert c.get('/finanzas?tab=marcaciones&desde=invalid').status_code==400
+    assert c.get(f'/finanzas?tab=marcaciones&lista=1&estado=Invalido').status_code==400
+    assert c.get('/finanzas?tab=marcaciones&desde=2025-02-02&hasta=2025-02-01').status_code==400
+
+
+def test_weekly_marks_require_positive_values_and_are_private_to_socio(environment):
+    app,db,c,sid,other,*_=environment
+    today=date.today().isoformat()
+    login(c)
+    invalid=post(c,'/marcaciones/nueva',{'week_start':today,
+        'amount':'0'})
+    assert invalid.status_code==400 and 'mayor que cero' in invalid.text
+    assert db.one('SELECT COUNT(*) AS n FROM weekly_marks')['n']==0
+
+    period=db.current_period()
+    with db.connection() as con:
+        con.execute('''INSERT INTO weekly_marks
+            (period_id,socio_id,week_start,concept,amount_cents,state)
+            VALUES(?,?,?,?,?,'Pendiente')''',(period['id'],sid,today,'Marcación semanal',1000))
+        con.execute('''INSERT INTO weekly_marks
+            (period_id,socio_id,week_start,concept,amount_cents,state)
+            VALUES(?,?,?,?,?,'Pendiente')''',(period['id'],other,today,'Marcación semanal',2000))
+    login(c,'socio')
+    history=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}&lista=1')
+    assert history.status_code==200 and 'Socio Uno' in history.text
+    assert 'Socio Dos' not in history.text
+    assert 'Registrar abono' not in history.text
+
+
+def test_weekly_marks_migration_backfills_paid_amount(tmp_path):
+    database=sqlite3.connect(tmp_path/'legacy.sqlite3')
+    database.row_factory=sqlite3.Row
+    database.execute('''CREATE TABLE weekly_marks (
+        id INTEGER PRIMARY KEY, period_id INTEGER, socio_id INTEGER, week_start TEXT,
+        concept TEXT, amount_cents INTEGER, state TEXT)''')
+    database.execute('''INSERT INTO weekly_marks
+        (period_id,socio_id,week_start,concept,amount_cents,state)
+        VALUES(1,1,'2026-11-09','Marcación semanal',2500,'Pagado')''')
+
+    Database.migrate_weekly_marks(database)
+
+    mark=database.execute('SELECT paid_cents FROM weekly_marks').fetchone()
+    assert mark['paid_cents']==2500
+    database.close()
+
+
+def test_weekly_pending_totals_sum_all_selected_dates_and_partial_payments(environment):
+    app,db,c,sid,other,*_=environment
+    login(c)
+    yesterday=(date.today()-timedelta(days=1)).isoformat()
+    today=date.today().isoformat()
+    for day,amount in ((yesterday,'10.00'),(today,'20.00')):
+        created=post(c,'/marcaciones/nueva',{'week_start':day,'amount':amount})
+        assert created.status_code==303
+
+    older_mark=db.one('SELECT id FROM weekly_marks WHERE week_start=? AND socio_id=?',(yesterday,sid))
+    partial=post(c,f'/marcaciones/{older_mark["id"]}/pagar',
+        {'amount':'5.00'})
+    assert partial.status_code==303
+
+    history=c.get(f'/finanzas?tab=marcaciones&desde={yesterday}&hasta={today}')
+    assert history.status_code==200 and 'S/ 55.00' in history.text
+    assert 'S/ 15.00' in history.text and 'S/ 40.00' in history.text

@@ -15,7 +15,8 @@ from fastapi.templating import Jinja2Templates
 
 from .db import Database, PERMISSIONS
 from .security import (password_hash,password_ok,password_valid,utcnow,nowstr,token_hash,make_session,
-                       locked,register_failure,reset_failures,safe_text,valid_email,valid_username)
+                       locked,register_failure,reset_failures,safe_text,valid_email,valid_username,
+                       money,valid_date)
 from .views import NAV,TABS,TITLES,SUBTITLES,modules
 from .forms import PERM_CREATE, spec, save, field_errors_for
 from .reports import fmt, build_rows, as_csv, as_pdf, REPORT_TYPES
@@ -69,7 +70,7 @@ def create_app(db_path=None, testing=False):
         return {'socios':'/socios','traspasos':'/socios?tab=traspasos','vehiculos':'/unidades?tab=vehiculos','unidades':'/unidades','cambios':'/unidades?tab=cambios',
                 'reuniones':'/actas?tab=reuniones','actas':'/actas?tab=actas','convocatorias':'/actas?tab=convocatorias',
                 'asistencia':'/actas?tab=asistencia','ingresos':'/finanzas?tab=ingresos','pagos':'/finanzas?tab=pagos',
-                'deudas':'/finanzas?tab=deudas','marcaciones':'/finanzas?tab=marcaciones','multas':'/multas',
+                'deudas':'/finanzas?tab=deudas','multas':'/multas',
                 'usuarios':'/usuarios'}.get(kind,'/')
 
     async def csrf_check(request):
@@ -85,6 +86,17 @@ def create_app(db_path=None, testing=False):
         if period['closed_at']:
             raise ValueError('El periodo ya está cerrado.')
         return period
+
+    def render_weekly_mark_form(request,week_start,amount='',error=None,status_code=200):
+        socios=db.all('SELECT id,name FROM socios WHERE active=1 ORDER BY name')
+        period=db.current_period()
+        existing=db.one('SELECT id FROM weekly_marks WHERE week_start=? LIMIT 1',(week_start,))
+        can_create=(not period['closed_at'] and period['starts']<=week_start<=date.today().isoformat()
+                    and not existing and bool(socios))
+        return render(request,'weekly_mark_form.html',status_code=status_code,active='finanzas',
+                      week_start=week_start,entries=socios,amount=amount,period=period,
+                      can_create=can_create,today=date.today().isoformat(),
+                      existing=bool(existing),error=error)
 
     def client_ip(request: Request) -> str:
         xff = request.headers.get('x-forwarded-for')
@@ -314,6 +326,118 @@ def create_app(db_path=None, testing=False):
             LIMIT 15
         """, (f'%{q}%', f'%{q}%', f'%{q}%'))
         return JSONResponse(rows)
+
+    @app.get('/marcaciones/nueva')
+    def new_weekly_marks(request:Request,week_start:str=''):
+        permitted(request,'finanzas.editar')
+        selected=week_start or date.today().isoformat()
+        try:
+            selected=valid_date(selected).isoformat()
+        except ValueError as exc:
+            raise HTTPException(400,'Seleccione una fecha válida.') from exc
+        return render_weekly_mark_form(request,selected)
+
+    @app.post('/marcaciones/nueva')
+    async def create_weekly_marks(request:Request):
+        permitted(request,'finanzas.editar')
+        form=await csrf_check(request)
+        raw_date=str(form.get('week_start','')).strip()
+        try:
+            week_start=valid_date(raw_date).isoformat()
+        except ValueError:
+            week_start=date.today().isoformat()
+            return render_weekly_mark_form(request,week_start,error='Seleccione una fecha válida.',
+                                           status_code=400)
+        socios=db.all('SELECT id,name FROM socios WHERE active=1 ORDER BY name')
+        if not socios:
+            raise HTTPException(400,'No hay socios activos para generar la marcación.')
+        raw_amount=str(form.get('amount','')).strip()
+        try:
+            amount=money(raw_amount)
+            if amount<=0:
+                raise ValueError('El valor del aporte debe ser mayor que cero.')
+        except ValueError as exc:
+            return render_weekly_mark_form(request,week_start,raw_amount,str(exc),status_code=400)
+        period=db.current_period()
+        if period['closed_at']:
+            return render_weekly_mark_form(request,week_start,raw_amount,
+                'El periodo financiero está cerrado; no se pueden crear marcaciones.',status_code=400)
+        if not period['starts']<=week_start<=date.today().isoformat():
+            return render_weekly_mark_form(request,week_start,raw_amount,
+                f'La fecha debe estar entre {period["starts"]} y hoy.',status_code=400)
+        if db.one('SELECT id FROM weekly_marks WHERE week_start=? LIMIT 1',(week_start,)):
+            return render_weekly_mark_form(request,week_start,raw_amount,
+                'Ya existe una marcación para esta fecha. Consulte el historial para evitar duplicados.',
+                status_code=400)
+
+        uid=current(request)['id']
+        try:
+            with db.connection() as con:
+                current_period=Database.ensure_period(con,date.today())
+                if current_period['closed_at']:
+                    raise HTTPException(400,'El periodo financiero está cerrado; no se pueden crear marcaciones.')
+                for socio in socios:
+                    con.execute('''INSERT INTO weekly_marks
+                        (period_id,socio_id,week_start,concept,amount_cents,state,created_by)
+                        VALUES(?,?,?,?,?,'Pendiente',?)''',
+                        (current_period['id'],socio['id'],week_start,'Marcación semanal',
+                         amount,uid))
+                Database.audit(con,uid,'Crear marcación semanal','weekly_marks',None,
+                               f"{week_start}: {len(socios)} socios registrados.")
+        except sqlite3.IntegrityError as exc:
+            return render_weekly_mark_form(request,week_start,raw_amount,
+                'Ya existe una marcación para esta fecha o uno de sus valores no es válido.',
+                status_code=400)
+        return redir(f'/finanzas?tab=marcaciones&desde={week_start}&hasta={week_start}',
+                     'Marcación semanal generada para todos los socios activos.')
+
+    @app.post('/marcaciones/{mark_id}/pagar')
+    async def pay_weekly_mark(request:Request,mark_id:int):
+        permitted(request,'finanzas.editar')
+        form=await csrf_check(request)
+        try:
+            amount=money(form.get('amount',''))
+        except ValueError as exc:
+            raise HTTPException(400,str(exc)) from exc
+        if amount<=0:
+            raise HTTPException(400,'El valor del abono debe ser mayor que cero.')
+        method='Efectivo'
+        uid=current(request)['id']
+        today=date.today().isoformat()
+        with db.connection() as con:
+            try:
+                period=active_period_for_write(con)
+            except ValueError as exc:
+                raise HTTPException(400,str(exc)) from exc
+            mark=con.execute('''SELECT w.*,s.name AS socio_name FROM weekly_marks w
+                JOIN socios s ON s.id=w.socio_id WHERE w.id=?''',(mark_id,)).fetchone()
+            if not mark:
+                raise HTTPException(404,'Marcación semanal no encontrada.')
+            if mark['state']!='Pendiente':
+                raise HTTPException(400,'Esta marcación ya fue pagada.')
+            if mark['amount_cents']<=0:
+                raise HTTPException(400,'El valor de la marcación debe ser mayor que cero antes de cobrar.')
+            remaining=mark['amount_cents']-mark['paid_cents']
+            if amount>remaining:
+                raise HTTPException(400,'El abono no puede ser mayor que el saldo pendiente.')
+            total_paid=mark['paid_cents']+amount
+            state='Pagado' if total_paid==mark['amount_cents'] else 'Pendiente'
+            income_id=con.execute('''INSERT INTO incomes
+                (period_id,socio_id,category,concept,amount_cents,method,day,created_by)
+                VALUES(?,?,?,?,?,?,?,?)''',
+                (period['id'],mark['socio_id'],'Marcación semanal',
+                 f"Marcación semanal · {mark['week_start']}",amount,method,today,uid)).lastrowid
+            updated=con.execute('''UPDATE weekly_marks SET state=?,paid_cents=?,paid_at=CURRENT_TIMESTAMP,
+                payment_method=?,income_id=? WHERE id=? AND state='Pendiente' AND paid_cents=?''',
+                (state,total_paid,method,income_id,mark_id,mark['paid_cents'])).rowcount
+            if updated!=1:
+                raise HTTPException(409,'La marcación cambió mientras se registraba el pago. Recargue la lista.')
+            Database.audit(con,uid,'Pagar marcación semanal','weekly_marks',mark_id,
+                f"{mark['socio_name']}: abono de {amount/100:.2f} S/; acumulado "
+                f"{total_paid/100:.2f} S/ de {mark['amount_cents']/100:.2f} S/ ({method})")
+        return redir(f'/finanzas?tab=marcaciones&desde={mark["week_start"]}&hasta={mark["week_start"]}&lista=1',
+                     'Abono registrado en Finanzas; la marcación sigue pendiente.' if state=='Pendiente'
+                     else 'Aporte completado; la marcación figura como pagada.')
 
     @app.get('/nuevo/{kind}')
     def new_form(request:Request,kind:str):
@@ -828,7 +952,21 @@ def create_app(db_path=None, testing=False):
             raise HTTPException(403,'Apartado reservado exclusivamente para el Administrador.')
         if not tab or tab not in dict(TABS[module_name]): tab=TABS[module_name][0][0]
         u=current(request)
-        data=modules(db,module_name,tab,u['role'],u['socio_id'])
+        weekly_from=request.query_params.get('desde','').strip() if module_name=='finanzas' and tab=='marcaciones' else ''
+        weekly_to=request.query_params.get('hasta','').strip() if module_name=='finanzas' and tab=='marcaciones' else ''
+        weekly_state=request.query_params.get('estado','').strip() if module_name=='finanzas' and tab=='marcaciones' else ''
+        weekly_list=(module_name=='finanzas' and tab=='marcaciones'
+                     and request.query_params.get('lista')=='1')
+        try:
+            weekly_from=valid_date(weekly_from).isoformat() if weekly_from else ''
+            weekly_to=valid_date(weekly_to).isoformat() if weekly_to else ''
+        except ValueError as exc:
+            raise HTTPException(400,'El filtro de fechas de marcación no es válido.') from exc
+        if weekly_from and weekly_to and weekly_from>weekly_to:
+            raise HTTPException(400,'La fecha inicial no puede ser posterior a la fecha final.')
+        if weekly_state not in ('','Pagado','Pendiente'):
+            raise HTTPException(400,'El estado de marcación no es válido.')
+        data=modules(db,module_name,tab,u['role'],u['socio_id'],weekly_from,weekly_to,weekly_list,weekly_state)
         if data.get('new_kind') and not has(request,PERM_CREATE[data['new_kind']]):data['new_kind']=None
         if module_name=='usuarios' and tab=='permisos':
             data['permission_labels']=PERMISSIONS

@@ -1,0 +1,34 @@
+{% extends 'base.html' %}{% block title %}Nueva marcación semanal{% endblock %}{% block content %}
+<div class="heading-row"><div><a class="back-link" href="/finanzas?tab=marcaciones">← Volver a marcación semanal</a><h1>Nueva marcación semanal</h1><p>Seleccione una fecha y el valor del aporte que corresponde a cada socio activo.</p></div></div>
+{% if error %}<div class="notice danger" role="alert">{{ error }}</div>{% endif %}
+<section class="panel form-panel">
+<form action="/marcaciones/nueva" method="get" class="form-grid">
+<div class="field">
+<label for="weekly-mark-date">Fecha de marcación <span class="required">*</span></label>
+<input id="weekly-mark-date" type="date" name="week_start" value="{{ week_start }}" min="{{ period.starts }}" max="{{ today }}" required>
+</div>
+<div class="form-actions"><button type="submit" class="btn secondary">Cargar socios para esta fecha</button></div>
+</form>
+</section>
+{% if existing %}<div class="notice info">Ya existe una marcación para esta fecha. No se puede generar otra. <a href="/finanzas?tab=marcaciones&desde={{ week_start }}&hasta={{ week_start }}&lista=1">Ver la lista de pagos de esta fecha.</a></div>
+{% elif period.closed_at %}<div class="notice danger">El periodo financiero está cerrado; no se pueden crear marcaciones.</div>
+{% elif week_start < period.starts or week_start > today %}<div class="notice danger">La fecha debe estar dentro del periodo financiero abierto y no puede ser futura.</div>
+{% elif not entries %}<div class="notice info">No hay socios activos para generar la marcación.</div>
+{% else %}
+<section class="panel"><div class="panel-heading"><div><h2>Socios activos</h2><p>El aporte se aplicará por igual a todos. Los socios con abonos parciales seguirán pendientes.</p></div><span class="pill">{{ entries|length }} socios</span></div>
+<form action="/marcaciones/nueva" method="post">
+<input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="week_start" value="{{ week_start }}">
+<div class="form-grid">
+<div class="field">
+<label for="weekly-mark-amount">Valor del aporte por socio (S/) <span class="required">*</span></label>
+<input id="weekly-mark-amount" type="number" name="amount" value="{{ amount }}" min="0.01" max="9999999999.99" step="0.01" inputmode="decimal" placeholder="0.00" required>
+</div>
+<p class="hint full">El pendiente total inicial será el aporte multiplicado por {{ entries|length }} socios activos.</p>
+</div>
+<div class="table-wrap"><table><thead><tr><th>Socio</th><th>Estado inicial</th></tr></thead><tbody>
+{% for entry in entries %}<tr><td>{{ entry.name }}</td><td><span class="pill orange">Pendiente</span></td></tr>{% endfor %}
+</tbody></table></div>
+<div class="form-actions"><button type="submit" class="btn primary">Generar marcación</button></div>
+</form></section>
+{% endif %}
+{% endblock %}

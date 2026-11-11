@@ -8,7 +8,7 @@ from .db import Database
 PERM_CREATE = {
  'socios':'socios.crear','traspasos':'socios.crear','vehiculos':'unidades.editar','unidades':'unidades.editar','cambios':'unidades.editar',
  'reuniones':'actas.editar','actas':'actas.editar','convocatorias':'actas.editar','asistencia':'actas.editar',
- 'ingresos':'finanzas.editar','deudas':'finanzas.editar','pagos':'finanzas.editar','marcaciones':'finanzas.editar',
+ 'ingresos':'finanzas.editar','deudas':'finanzas.editar','pagos':'finanzas.editar',
  'multas':'multas.editar','usuarios':'usuarios.editar'
 }
 
@@ -81,7 +81,6 @@ def spec(db,kind):
      'ingresos':('Registrar ingreso',[field('day','Fecha','date'),field('socio_id','Socio','select',False,[('', 'Ingreso de la compañía')]+socios),field('category','Tipo de ingreso','select',options=[('Aporte','Aporte'),('Cuota','Cuota'),('Servicio','Servicio'),('Cambio de vehículo','Cambio de vehículo'),('Otros','Otros')]),field('concept','Concepto'),field('amount','Monto (S/)','money'),field('method','Método de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
      'deudas':('Registrar deuda',[field('socio_id','Socio','select',options=socios),field('concept','Concepto'),field('amount','Monto (S/)','money'),field('issued','Fecha de emisión','date'),field('due','Vencimiento','date',False)]),
      'pagos':('Registrar pago de deuda',[field('debt_id','Deuda pendiente','select',options=debts),field('amount','Monto abonado (S/)','money'),field('day','Fecha','date'),field('method','Medio de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
-     'marcaciones':('Marcación semanal',[field('socio_id','Socio','select',options=socios),field('week_start','Fecha de semana','date'),field('concept','Concepto de marcación'),field('amount','Importe (S/)','money',False),field('state','Estado','select',options=[('Marcado','Marcado'),('Pendiente','Pendiente')])]),
      'multas':('Registrar multa',[field('socio_id','Socio o conductor','select',options=socios),field('unit_id','Unidad','select',False,[('','Sin asignar')]+unidades),field('category','Categoría','select',options=[('Atraso','Atraso'),('Minutos','Minutos'),('Radio','Radio'),('Trabajo','Trabajo'),('Otros','Otros')]),field('reason','Motivo de la multa'),field('occurred_at','Fecha','date'),field('amount','Monto (S/)','money')]),
      'usuarios':('Registrar usuario',[field('full_name','Nombre completo','person_name'),field('username','Usuario','username'),field('email','Correo','email',False),field('role_id','Rol','select',options=roles),field('socio_id','Socio vinculado','select',False,[('', 'No vinculado')]+socios),field('password','Contraseña (mínimo 12 caracteres)','password')]),
     }
@@ -92,7 +91,7 @@ def save(db, kind, data, uid, existing_id=None, ip=None):
     if kind not in PERM_CREATE: raise ValueError('Acción desconocida.')
     data = dict(data)
     # Resolución automática por cédula o número de unidad si no se envió socio_id
-    if kind in ('multas', 'ingresos', 'deudas', 'marcaciones', 'asistencia'):
+    if kind in ('multas', 'ingresos', 'deudas', 'asistencia'):
         ced = str(data.get('lookup_cedula') or data.get('cedula') or '').strip()
         if ced and not data.get('socio_id'):
             s_row = db.one('SELECT id FROM socios WHERE cedula=? AND active=1', (ced,))
@@ -141,7 +140,7 @@ def save(db, kind, data, uid, existing_id=None, ip=None):
         if kind not in ('socios','traspasos','vehiculos','unidades','reuniones','actas','convocatorias','asistencia','usuarios','multas') and period['closed_at']:
             raise ValueError('No se puede registrar: el periodo está cerrado.')
         financial_date={'cambios':'changed_at','ingresos':'day','deudas':'issued','pagos':'day',
-                        'marcaciones':'week_start'}.get(kind)
+                        }.get(kind)
         if financial_date and not (period['starts']<=v[financial_date]<=period['ends']):
             raise ValueError(f'La fecha debe estar dentro del periodo activo ({period["starts"]} a {period["ends"]}).')
         fine_cycle=Database.ensure_fine_cycle(con,date.today()) if kind=='multas' else None
@@ -241,8 +240,6 @@ def save(db, kind, data, uid, existing_id=None, ip=None):
             con.execute('UPDATE debts SET paid_cents=paid_cents+? WHERE id=?',(v['amount'],debt['id']))
             if debt['fine_id'] and debt['paid_cents']+v['amount']==debt['amount_cents']:
                 con.execute("UPDATE fines SET status='Pagada' WHERE id=?",(debt['fine_id'],))
-        elif kind=='marcaciones':
-            rid=con.execute('INSERT INTO weekly_marks(period_id,socio_id,week_start,concept,amount_cents,state,created_by) VALUES(?,?,?,?,?,?,?)',(period['id'],nullable('socio_id'),v['week_start'],v['concept'],v['amount'],v['state'],uid)).lastrowid
         elif kind=='multas':
             if not v['amount']: raise ValueError('La multa debe tener un monto mayor que cero.')
             rid=con.execute('INSERT INTO fines(period_id,socio_id,unit_id,category,reason,occurred_at,amount_cents,created_by,fine_cycle_id) VALUES(?,?,?,?,?,?,?,?,?)',(period['id'],nullable('socio_id'),nullable('unit_id'),v['category'],v['reason'],v['occurred_at'],v['amount'],uid,fine_cycle['id'])).lastrowid

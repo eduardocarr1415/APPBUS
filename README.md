@@ -29,7 +29,7 @@ Si PowerShell bloquea activar entornos virtuales, puede ejecutar `\.venv\Scripts
 - **Inicio:** indicadores, deudas por socio, reuniones próximas y actividad.
 - **Socios:** registro de socios, asignación de unidades y traspasos de buses con acciones y derechos. El historial conserva cada propietario anterior y nuevo; cada socio puede tener una sola unidad activa.
 - **Actas y reuniones:** Actas / Reuniones / Convocatorias / Asistencia; redacción y archivos PDF o imágenes adjuntas.
-- **Ingresos económicos:** Resumen / Ingresos / Pagos / Deudas / Marcación semanal / Historial.
+- **Ingresos económicos:** Resumen / Ingresos / Pagos / Deudas / Marcación semanal / Historial. La marcación aplica un aporte común a todos los socios activos de una fecha; el detalle se abre desde «Ver lista», admite abonos parciales y calcula el pendiente según lo recaudado.
 - **Multas:** Multas / Pendientes / Pagadas. Una nueva multa crea una deuda vinculada. Al pagar esa deuda, la multa queda pagada.
 - **Unidades y vehículos:** Unidades / Vehículos / Cambios. Se conserva cada reasignación.
 - **Vigilancia:** rol de acceso para multas, sin registro digital de las verificaciones diarias de unidades.
@@ -83,4 +83,4 @@ La app utiliza el puerto 8000; puede cambiarlo con `BUS_PORT`. Para hacer accesi
 
 ## Limitaciones conocidas del prototipo
 
-Se han implementado los flujos principales de registro, consulta, informes y acceso. Antes del uso real se deben acordar los montos de multas, el significado de *marcación semanal*, quién puede aprobar actas, las reglas de cambio de vehículo y qué documentos deben firmarse. La publicación de convocatorias es **interna al sistema** (no envía WhatsApp ni correos). Los reportes CSV se pueden abrir con Excel, aunque no son archivos `.xlsx`. Los datos de demostración no representan valores reales.
+Se han implementado los flujos principales de registro, consulta, informes y acceso. Antes del uso real se deben acordar los montos de multas, quién puede aprobar actas, las reglas de cambio de vehículo y qué documentos deben firmarse. La publicación de convocatorias es **interna al sistema** (no envía WhatsApp ni correos). Los reportes CSV se pueden abrir con Excel, aunque no son archivos `.xlsx`. Los datos de demostración no representan valores reales.
