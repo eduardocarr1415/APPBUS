@@ -136,7 +136,10 @@ CREATE TABLE IF NOT EXISTS fines (
 CREATE TABLE IF NOT EXISTS weekly_marks (
  id INTEGER PRIMARY KEY, period_id INTEGER NOT NULL REFERENCES periods(id), socio_id INTEGER NOT NULL REFERENCES socios(id),
  week_start TEXT NOT NULL, concept TEXT NOT NULL, amount_cents INTEGER NOT NULL DEFAULT 0 CHECK(amount_cents>=0),
- state TEXT NOT NULL DEFAULT 'Marcado', created_by INTEGER REFERENCES users(id),
+ paid_cents INTEGER NOT NULL DEFAULT 0 CHECK(paid_cents>=0 AND paid_cents<=amount_cents),
+ state TEXT NOT NULL DEFAULT 'Pendiente' CHECK(state IN ('Pendiente','Pagado')),
+ paid_at TEXT, payment_method TEXT, income_id INTEGER UNIQUE REFERENCES incomes(id),
+ created_by INTEGER REFERENCES users(id),
  UNIQUE(socio_id,week_start,concept)
 );
 CREATE TABLE IF NOT EXISTS vigilance (
@@ -208,6 +211,7 @@ class Database:
                 con.execute("INSERT OR IGNORE INTO role_permissions(role_id, permission) VALUES(?, 'configuracion.ver')", (admin_row['id'],))
             self.ensure_period(con, date.today())
             self.migrate_fine_cycles(con)
+            self.migrate_weekly_marks(con)
             con.execute("DELETE FROM role_permissions WHERE permission IN ('vigilancia.ver','vigilancia.editar','reportes.vigilancia')")
             self.ensure_fine_cycle(con,date.today())
 
@@ -235,6 +239,21 @@ class Database:
                      period['closed_by'],snapshot,period['id'])).lastrowid
             con.execute('UPDATE fines SET fine_cycle_id=? WHERE period_id=? AND fine_cycle_id IS NULL',
                         (cycle_id,period['id']))
+
+    @staticmethod
+    def migrate_weekly_marks(con):
+        columns={row['name'] for row in con.execute('PRAGMA table_info(weekly_marks)').fetchall()}
+        if 'paid_at' not in columns:
+            con.execute('ALTER TABLE weekly_marks ADD COLUMN paid_at TEXT')
+        if 'payment_method' not in columns:
+            con.execute('ALTER TABLE weekly_marks ADD COLUMN payment_method TEXT')
+        if 'income_id' not in columns:
+            con.execute('ALTER TABLE weekly_marks ADD COLUMN income_id INTEGER REFERENCES incomes(id)')
+        if 'paid_cents' not in columns:
+            con.execute('ALTER TABLE weekly_marks ADD COLUMN paid_cents INTEGER NOT NULL DEFAULT 0 CHECK(paid_cents>=0)')
+        con.execute("UPDATE weekly_marks SET paid_cents=amount_cents WHERE state='Pagado' AND paid_cents=0")
+        con.execute("UPDATE weekly_marks SET state='Pendiente' WHERE state NOT IN ('Pagado','Pendiente')")
+        con.execute('CREATE INDEX IF NOT EXISTS idx_weekly_marks_date ON weekly_marks(week_start,socio_id)')
 
     @staticmethod
     def ensure_period(con, today):
