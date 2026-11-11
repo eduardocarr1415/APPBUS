@@ -675,6 +675,7 @@ def test_multas_pay_flow_and_pagadas_tab(environment):
     page_pend = c.get('/multas?tab=pendientes')
     assert page_pend.status_code == 200
     assert f'/multas/{fine["id"]}/pagar' in page_pend.text
+    assert '✓ Registrar abono' in page_pend.text
     assert 'Registrar multa' in page_pend.text
 
     # 3. En la pestaña de pagadas NO aparece el botón de Registrar multa ni la multa pendiente
@@ -687,6 +688,8 @@ def test_multas_pay_flow_and_pagadas_tab(environment):
     get_pay = c.get(f'/multas/{fine["id"]}/pagar')
     assert get_pay.status_code == 200
     assert 'Cobrar y pagar multa' in get_pay.text
+    assert 'app-confirm-dialog' in get_pay.text
+    assert 'data-confirm=' in get_pay.text
     assert '35.00' in get_pay.text
 
     # 5. POST /multas/{id}/pagar registra el pago
@@ -816,7 +819,8 @@ def test_weekly_marks_are_created_searched_and_paid_as_income(environment):
     assert 'Ver lista' in history.text and 'S/ 25.00' in history.text
     history=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}&lista=1')
     assert 'Socio Uno' in history.text and 'Socio Dos' in history.text
-    assert history.text.count('12.50') >= 2 and 'Registrar abono' in history.text
+    assert history.text.count('12.50') >= 2 and '>Pagar</button>' in history.text
+    assert 'btn success small' in history.text and 'weekly-payment-form' in history.text
     assert '<th>Medio</th>' not in history.text
     assert 'weekly-payment-form' in history.text and 'weekly-date-filter' in history.text
     assert 'weekly-status-filter' in history.text
@@ -847,7 +851,7 @@ def test_weekly_marks_are_created_searched_and_paid_as_income(environment):
 
     searched=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}&lista=1')
     assert 'Total recaudado' in searched.text and 'Pagado' in searched.text
-    assert 'Pendiente' in searched.text and 'Registrar abono' in searched.text
+    assert 'Pendiente' in searched.text and '>Pagar</button>' in searched.text
     paid_only=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}&lista=1&estado=Pagado')
     assert 'Socio Uno' in paid_only.text and 'Socio Dos' not in paid_only.text
     pending_only=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}&lista=1&estado=Pendiente')
@@ -879,7 +883,7 @@ def test_weekly_marks_require_positive_values_and_are_private_to_socio(environme
     history=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}&lista=1')
     assert history.status_code==200 and 'Socio Uno' in history.text
     assert 'Socio Dos' not in history.text
-    assert 'Registrar abono' not in history.text
+    assert '>Pagar</button>' not in history.text
 
 
 def test_weekly_marks_migration_backfills_paid_amount(tmp_path):

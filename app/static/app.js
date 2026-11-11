@@ -28,13 +28,51 @@ document.addEventListener('DOMContentLoaded',()=>{
   const target=document.getElementById(btn.dataset.copyTarget);
   if(target&&navigator.clipboard?.writeText){navigator.clipboard.writeText(target.textContent).then(()=>{btn.textContent='Copiado';});}
  });
+ const confirmDialog=document.querySelector('#app-confirm-dialog');
+ const confirmMessage=document.querySelector('#confirm-dialog-message');
+ const confirmCancel=confirmDialog?.querySelector('[data-confirm-cancel]');
+ const confirmAccept=confirmDialog?.querySelector('[data-confirm-accept]');
+ let pendingConfirmation=null;
+ let approvedSubmitter=null;
  document.querySelectorAll('form').forEach(form=>{
   form.addEventListener('invalid',()=>form.classList.add('validation-attempted'),true);
   form.addEventListener('submit',e=>{
    const btn=e.submitter;
-   if(btn?.dataset.confirm&&!window.confirm(btn.dataset.confirm))e.preventDefault();
+   if(!btn?.dataset.confirm)return;
+   if(btn===approvedSubmitter){approvedSubmitter=null;return;}
+   e.preventDefault();
+   if(!confirmDialog?.showModal){
+    if(window.confirm(btn.dataset.confirm)){
+     approvedSubmitter=btn;
+     form.requestSubmit(btn);
+    }
+    return;
+   }
+   pendingConfirmation={form,submitter:btn};
+   confirmMessage.textContent=btn.dataset.confirm;
+   confirmDialog.showModal();
   });
  });
+ confirmCancel?.addEventListener('click',()=>{
+  pendingConfirmation=null;
+  confirmDialog.close();
+ });
+ confirmAccept?.addEventListener('click',()=>{
+  if(!pendingConfirmation)return;
+  const {form,submitter}=pendingConfirmation;
+  pendingConfirmation=null;
+  confirmDialog.close();
+  if(!form.reportValidity())return;
+  approvedSubmitter=submitter;
+  form.requestSubmit(submitter);
+ });
+ confirmDialog?.addEventListener('click',e=>{
+  if(e.target===confirmDialog){
+   pendingConfirmation=null;
+   confirmDialog.close();
+  }
+ });
+ confirmDialog?.addEventListener('close',()=>{pendingConfirmation=null;});
 
  // Control de Asistencia en Actas y Reuniones
  const meetingSelect = document.getElementById('asistencia-meeting-select');

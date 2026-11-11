@@ -906,10 +906,15 @@ td:nth-child(1) {
 
 .weekly-payment-form {
     display: grid;
-    grid-template-columns: 90px auto;
+    grid-template-columns: 90px max-content;
     align-items: end;
     gap: 8px;
     min-width: 0
+}
+
+.weekly-payment-form button {
+    justify-self: start;
+    white-space: nowrap
 }
 
 .weekly-payment-form .field {
@@ -943,6 +948,16 @@ td:nth-child(1) {
 
 .mini-action:hover {
     background: #ddebff
+}
+
+.mini-action.success {
+    color: #15803d;
+    background: #f0fdf4;
+    border-color: #86efac
+}
+
+.mini-action.success:hover {
+    background: #dcfce7
 }
 
 .pill {
@@ -1006,6 +1021,16 @@ td:nth-child(1) {
     background: #f0f6ff
 }
 
+.btn.success {
+    color: #15803d;
+    background: #f0fdf4;
+    border-color: #86efac
+}
+
+.btn.success:hover {
+    background: #dcfce7
+}
+
 .btn.danger {
     background: #c82a45;
     color: white;
@@ -1019,6 +1044,48 @@ td:nth-child(1) {
 
 .btn.wide {
     width: 100%
+}
+
+.confirm-dialog {
+    width: min(440px, calc(100% - 32px));
+    padding: 28px;
+    border: 1px solid #dce5f1;
+    border-radius: 16px;
+    color: #101d3a;
+    text-align: center;
+    box-shadow: 0 24px 70px #0b153455
+}
+
+.confirm-dialog::backdrop {
+    background: #0b153477;
+    backdrop-filter: blur(3px)
+}
+
+.confirm-dialog-icon {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 15px;
+    border-radius: 50%;
+    color: #075bda;
+    background: #eaf2ff;
+    font-size: 24px;
+    font-weight: 700
+}
+
+.confirm-dialog h2 {
+    margin-bottom: 8px
+}
+
+.confirm-dialog p {
+    margin-bottom: 22px
+}
+
+.confirm-dialog-actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px
 }
 
 .text-link {
