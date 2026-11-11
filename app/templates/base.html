@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <title>{% block title %}{{ settings.company_name|default('Compañía de Transportes Guaytacama') }}{% endblock %} · {{ settings.company_slogan|default('Buses Guaytacama') }}</title>
   <link rel="icon" href="{{ settings.favicon_url|default('/static/favicon.svg') }}" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=2026.5" defer>
+  <link rel="stylesheet" href="/static/style.css?v=2026.8" defer>
   <style id="dynamic-system-theme">
     :root {
       {% if settings.primary_color %}--primary-color: {{ settings.primary_color }};{% endif %}
@@ -20,7 +20,7 @@
       {% if settings.font_size %}--base-font-size: {{ settings.font_size }};{% endif %}
     }
   </style>
-  <script src="/static/app.js?v=2026.5" defer></script>
+  <script src="/static/app.js?v=2026.7" defer></script>
 </head>
 <body class="{% if not user %}auth-body{% endif %}" data-tabs-style="{{ settings.tabs_style|default('capsule') }}">
 {% if user %}
@@ -79,6 +79,16 @@
     </footer>
   </div>
 </div>
+
+<dialog class="confirm-dialog" id="app-confirm-dialog" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
+  <div class="confirm-dialog-icon" aria-hidden="true">?</div>
+  <h2 id="confirm-dialog-title">Confirmar operación</h2>
+  <p id="confirm-dialog-message"></p>
+  <div class="confirm-dialog-actions">
+    <button class="btn secondary" type="button" data-confirm-cancel>Cancelar</button>
+    <button class="btn primary" type="button" data-confirm-accept>Confirmar</button>
+  </div>
+</dialog>
 
 <div id="bus-transition-overlay" class="bus-transition-overlay" aria-hidden="true" style="display:none;" data-duration="{{ settings.animation_duration|default('1.8') }}">
   <div class="bus-transition-backdrop"></div>

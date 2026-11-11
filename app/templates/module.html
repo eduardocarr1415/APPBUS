@@ -65,7 +65,7 @@
 </form>
 <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Socio</th><th>Valor</th><th>Estado</th><th>Fecha de pago</th><th>Acción</th></tr></thead><tbody>
 {% for mark in data.weekly_marks %}<tr><td>{{ mark.week_start }}</td><td>{{ mark.name }}</td><td>{{ mark.amount_cents|money }}{% if mark.paid_cents %}<small>Abonado: {{ mark.paid_cents|money }}</small>{% endif %}</td><td><span class="pill {{ 'green' if mark.state=='Pagado' else 'orange' }}">{{ mark.state }}</span></td><td>{{ mark.paid_at or '—' }}</td><td>
-{% if mark.state=='Pendiente' and 'finanzas.editar' in perms %}<form action="/marcaciones/{{ mark.id }}/pagar" method="post" class="weekly-payment-form"><input type="hidden" name="_csrf" value="{{ csrf }}"><div class="field"><label for="weekly-payment-{{ mark.id }}">Abono (S/)</label><input id="weekly-payment-{{ mark.id }}" type="number" name="amount" value="{{ '%.2f'|format((mark.amount_cents-mark.paid_cents)/100) }}" min="0.01" max="{{ (mark.amount_cents-mark.paid_cents)/100 }}" step="0.01" inputmode="decimal" placeholder="0.00" required></div><button class="btn secondary small" type="submit" data-confirm="¿Registrar este abono para {{ mark.name }}?">Registrar abono</button></form>{% else %}—{% endif %}
+{% if mark.state=='Pendiente' and 'finanzas.editar' in perms %}<form action="/marcaciones/{{ mark.id }}/pagar" method="post" class="weekly-payment-form"><input type="hidden" name="_csrf" value="{{ csrf }}"><div class="field"><label for="weekly-payment-{{ mark.id }}">Abono (S/)</label><input id="weekly-payment-{{ mark.id }}" type="number" name="amount" value="{{ '%.2f'|format((mark.amount_cents-mark.paid_cents)/100) }}" min="0.01" max="{{ (mark.amount_cents-mark.paid_cents)/100 }}" step="0.01" inputmode="decimal" placeholder="0.00" required></div><button class="btn success small" type="submit" data-confirm="¿Registrar este abono para {{ mark.name }}?">Pagar</button></form>{% else %}—{% endif %}
 </td></tr>{% else %}<tr><td colspan="6" class="empty">No hay socios en el resultado. Seleccione otra fecha o genere una marcación.</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% endif %}
@@ -93,7 +93,7 @@
 {% if mod=='actas' and tab in ['actas','reuniones','convocatorias'] %}<a class="mini-action" href="/reunion/{{ row[0] }}">Ver</a>{% endif %}
 {% if mod=='usuarios' and tab=='usuarios' and 'usuarios.editar' in perms %}<a class="mini-action" href="/usuario/{{ row[0] }}">Administrar</a><form action="/usuarios/{{ row[0] }}/estado" method="post"><input type="hidden" name="_csrf" value="{{ csrf }}"><button class="mini-action" type="submit" data-confirm="¿Cambiar el estado de acceso de este usuario?">Activar / Desactivar</button></form>{% endif %}
 {% if mod=='multas' and tab!='pagadas' and ('multas.editar' in perms or 'finanzas.editar' in perms) and row[-1]=='Pendiente' %}
-<a class="mini-action success" href="/multas/{{ row[0] }}/pagar" style="color:#15803d;font-weight:600;background:#f0fdf4;border-color:#86efac;text-decoration:none;">✓ Pagar</a>
+<a class="mini-action success" href="/multas/{{ row[0] }}/pagar">✓ Registrar abono</a>
 {% if 'multas.editar' in perms %}<form action="/multas/{{ row[0] }}/anular" method="post" style="display:inline-block;"><input type="hidden" name="_csrf" value="{{ csrf }}"><button class="mini-action" type="submit" data-confirm="¿Anular esta multa pendiente?">Anular</button></form>{% endif %}
 {% endif %}
 </td>{% endif %}

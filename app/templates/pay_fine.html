@@ -49,7 +49,7 @@
 
       <div class="form-actions" style="margin-top:20px;display:flex;gap:12px;">
         <a class="btn secondary" href="/multas?tab=pendientes">Cancelar</a>
-        <button class="btn primary" type="submit" style="background:#16a34a;border-color:#15803d;">✓ Confirmar y registrar pago</button>
+        <button class="btn primary" type="submit" style="background:#16a34a;border-color:#15803d;" data-confirm="¿Registrar el pago de S/ {{ amount_fmt }} para {{ fine.socio_name }}?">✓ Confirmar y registrar pago</button>
       </div>
     </form>
   </section>
@@ -69,4 +69,3 @@
   </aside>
 </div>
 {% endblock %}
-
