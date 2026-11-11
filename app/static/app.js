@@ -1,7 +1,27 @@
 'use strict';
 document.addEventListener('DOMContentLoaded',()=>{
  const menu=document.querySelector('[data-menu-toggle]');
- if(menu)menu.addEventListener('click',()=>document.querySelector('#sidebar')?.classList.toggle('open'));
+ const sidebar=document.querySelector('#sidebar');
+ const backdrop=document.querySelector('#sidebar-backdrop') || document.querySelector('.sidebar-backdrop');
+ const toggleSidebar = (force) => {
+  if (!sidebar) return;
+  const isOpen = force !== undefined ? force : !sidebar.classList.contains('open');
+  sidebar.classList.toggle('open', isOpen);
+  if (backdrop) backdrop.classList.toggle('active', isOpen);
+  document.body.classList.toggle('sidebar-is-open', isOpen);
+ };
+ if(menu) menu.addEventListener('click', (e) => { e.stopPropagation(); toggleSidebar(); });
+ if(backdrop) backdrop.addEventListener('click', () => toggleSidebar(false));
+ document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && sidebar?.classList.contains('open')) toggleSidebar(false);
+ });
+ if(sidebar) {
+  sidebar.querySelectorAll('.nav-link').forEach(link => {
+   link.addEventListener('click', () => {
+    if (window.innerWidth <= 960) toggleSidebar(false);
+   });
+  });
+ }
  document.addEventListener('click',e=>{
   const btn=e.target.closest('[data-copy-target]');
   if(!btn)return;
