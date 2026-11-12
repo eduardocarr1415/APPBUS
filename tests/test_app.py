@@ -48,6 +48,11 @@ def test_protected_routes_and_login(environment):
     assert c.get('/usuarios',follow_redirects=False).status_code==303
     page=c.get('/login')
     assert 'Iniciar sesión' in page.text
+    assert 'data-password-toggle="login-password"' in page.text
+    assert 'id="login-password" type="password"' in page.text
+    assert 'data-password-icon="show"' in page.text and 'data-password-icon="hide"' in page.text
+    assert 'aria-label="Mostrar contraseña" aria-pressed="false"' in page.text
+    assert '>Mostrar</button>' not in page.text
     token=csrf(c)
     res=c.post('/login',data={'_csrf':token,'username':'admin','password':'incorrect'},follow_redirects=False)
     assert res.status_code==401
@@ -98,6 +103,8 @@ def test_socio_only_sees_own_finances(environment):
     r=c.get('/finanzas?tab=deudas')
     assert r.status_code==200 and 'Deuda propia' in r.text
     assert 'Deuda privada de otro socio' not in r.text
+    assert c.get('/finanzas?tab=egresos').status_code==403
+    assert c.get('/nuevo/egresos').status_code==403
     r=c.get('/unidades')
     assert 'U-001' in r.text and 'U-999' not in r.text
     assert c.get('/nuevo/deudas').status_code==403
@@ -106,18 +113,52 @@ def test_socio_only_sees_own_finances(environment):
 def test_report_outputs_and_period_close_guard(environment):
     app,db,c,sid,*_=environment
     login(c)
+    today=date.today().isoformat()
+    income=post(c,'/nuevo/ingresos',{'day':today,'socio_id':'','category':'Otros',
+        'concept':'Aporte de prueba','amount':'100.00','method':'Transferencia'})
+    assert income.status_code==303
+    expense=post(c,'/nuevo/egresos',{'day':today,'category':'Mantenimiento',
+        'concept':'Reparación','recipient':'Proveedor Uno','amount':'25.00','method':'Efectivo'})
+    assert expense.status_code==303
+    expenses_page=c.get('/finanzas?tab=egresos')
+    assert expenses_page.status_code==200 and 'Proveedor Uno' in expenses_page.text
+    assert 'Pagos' not in expenses_page.text
+    assert db.one("SELECT COUNT(*) n FROM audit WHERE entity='egresos'")['n']==1
+    financial_csv=c.get('/reporte/finanzas.csv')
+    assert financial_csv.status_code==200 and b'Proveedor Uno' in financial_csv.content
+
     pdf=c.get('/reporte/general.pdf')
     assert pdf.status_code==200 and pdf.content.startswith(b'%PDF-')
     csv=c.get('/reporte/deudas.csv')
     assert csv.status_code==200 and csv.content.startswith(b'\xef\xbb\xbf')
-    monthly=c.get('/reporte/gerencia.csv?month='+date.today().strftime('%Y-%m'))
+    month=date.today().strftime('%Y-%m')
+    prior_month=(date.today().replace(day=1)-timedelta(days=1)).strftime('%Y-%m')
+    with db.connection() as con:
+        period_id=db.current_period()['id']
+        con.execute('INSERT INTO incomes(period_id,concept,category,amount_cents,method,day) VALUES(?,?,?,?,?,?)',
+                    (period_id,'Saldo inicial','Otros',5000,'Efectivo',prior_month+'-15'))
+        con.execute('INSERT INTO expenses(period_id,category,concept,amount_cents,method,day) VALUES(?,?,?,?,?,?)',
+                    (period_id,'Otros','Egreso anterior',1000,'Efectivo',prior_month+'-20'))
+    monthly_financial=c.get('/reporte/finanzas.csv?month='+month)
+    assert monthly_financial.status_code==200
+    assert b'Aporte de prueba' in monthly_financial.content and b'Reparaci' in monthly_financial.content
+    assert b'Saldo inicial' not in monthly_financial.content and b'Egreso anterior' not in monthly_financial.content
+    monthly_financial_pdf=c.get('/reporte/finanzas.pdf?month='+month)
+    assert monthly_financial_pdf.status_code==200 and monthly_financial_pdf.content.startswith(b'%PDF-')
+    assert 'reporte_finanzas_'+month+'.pdf' in monthly_financial_pdf.headers['content-disposition']
+    monthly=c.get('/reporte/gerencia.csv?month='+month)
     assert monthly.status_code==200 and b'Ingresos registrados' in monthly.content
-    monthly_pdf=c.get('/reporte/gerencia.pdf?month='+date.today().strftime('%Y-%m'))
+    assert b'Total de ingresos' in monthly.content and b'S/ 100.00' in monthly.content
+    assert b'Total de egresos' in monthly.content and b'S/ 25.00' in monthly.content
+    assert b'Saldo disponible al inicio del mes' in monthly.content and b'S/ 40.00' in monthly.content
+    assert b'Balance neto del mes' in monthly.content and b'S/ 75.00' in monthly.content
+    assert b'Saldo disponible al cierre del mes' in monthly.content and b'S/ 115.00' in monthly.content
+    monthly_pdf=c.get('/reporte/gerencia.pdf?month='+month)
     assert monthly_pdf.status_code==200 and monthly_pdf.content.startswith(b'%PDF-')
     assert c.get('/reportes?tab=resumen').status_code==200
     finances_page=c.get('/reportes?tab=financieros')
-    assert finances_page.status_code==200 and 'Informe gerencial mensual' in finances_page.text
-    assert finances_page.text.count('Ingresos y pagos')==1
+    assert finances_page.status_code==200 and 'Balance económico mensual' in finances_page.text
+    assert finances_page.text.count('Ingresos y egresos')==1
 
     assert 'Reportes disponibles' not in finances_page.text
     assert c.get('/reportes?tab=cierre').status_code==200

@@ -6,7 +6,7 @@ NAV = [
  ('dashboard','/','▦','Dashboard',''),
  ('socios','/socios','♙','Socios','socios.ver'),
  ('actas','/actas','▤','Actas y reuniones','actas.ver'),
- ('finanzas','/finanzas','▥','Ingresos económicos','finanzas.ver'),
+ ('finanzas','/finanzas','▥','Finanzas','finanzas.ver'),
  ('multas','/multas','⚒','Multas','multas.ver'),
  ('unidades','/unidades','▣','Unidades y vehículos','unidades.ver'),
  ('reportes','/reportes','▥','Reportes','reportes.ver'),
@@ -17,17 +17,17 @@ NAV = [
 TABS={
  'socios':[('listado','Socios'),('unidades','Unidades asignadas'),('traspasos','Historial de traspasos')],
  'actas':[('actas','Actas'),('reuniones','Reuniones'),('convocatorias','Convocatorias'),('asistencia','Asistencia')],
- 'finanzas':[('resumen','Resumen'),('ingresos','Ingresos'),('pagos','Pagos'),('deudas','Deudas'),('marcaciones','Marcación semanal'),('historial','Historial')],
+ 'finanzas':[('resumen','Resumen'),('ingresos','Ingresos'),('egresos','Egresos'),('deudas','Deudas'),('marcaciones','Marcación semanal'),('historial','Historial')],
  'multas':[('multas','Multas'),('pendientes','Pendientes'),('pagadas','Pagadas')],
  'unidades':[('unidades','Unidades'),('vehiculos','Vehículos'),('cambios','Cambios de vehículo')],
  'reportes':[('resumen','Resumen'),('financieros','Finanzas y gestión'),('multas','Multas'),('asistencia','Asistencia'),('unidades','Unidades'),('cierre','Cierre anual de multas'),('historial','Historial de multas')],
  'usuarios':[('usuarios','Usuarios'),('roles','Roles'),('permisos','Permisos'),('auditoria','Auditoría')],
  'auditoria':[('todos','Todo el historial'),('logins','Inicios y accesos'),('operaciones','Operaciones'),('seguridad','Seguridad')],
 }
-TITLES={'socios':'Socios','actas':'Actas y reuniones','finanzas':'Ingresos económicos','multas':'Multas','unidades':'Unidades y vehículos','reportes':'Reportes','usuarios':'Usuarios y permisos','auditoria':'Historial del sistema'}
+TITLES={'socios':'Socios','actas':'Actas y reuniones','finanzas':'Finanzas','multas':'Multas','unidades':'Unidades y vehículos','reportes':'Reportes','usuarios':'Usuarios y permisos','auditoria':'Historial del sistema'}
 SUBTITLES={'socios':'Registro y administración de los socios de la compañía.',
 'actas':'Gestión de actas, reuniones, convocatorias y asistencia.',
-'finanzas':'Control de ingresos, pagos y deudas de la compañía.',
+'finanzas':'Control de ingresos, egresos, abonos y deudas de la compañía.',
 'multas':'Registro, cobro y seguimiento de multas.',
 'unidades':'Control de vehículos, asignaciones y cambios de unidad.',
 'reportes':'Informes organizados por tema, con periodos y cierres de multas independientes.',
@@ -85,14 +85,18 @@ def modules(db, key, tab, role_name='', socio_id=None, weekly_from='', weekly_to
         total_income=db.one('SELECT COALESCE(SUM(amount_cents),0) n FROM incomes WHERE period_id=?'+(' AND socio_id=?' if own else ''),own_args)['n']
         payargs=(pid,socio_id) if own else (pid,)
         total_pay=db.one('SELECT COALESCE(SUM(amount_cents),0) n FROM payments WHERE period_id=?'+(' AND socio_id=?' if own else ''),payargs)['n']
+        total_expenses=(db.one('SELECT COALESCE(SUM(amount_cents),0) n FROM expenses WHERE period_id=?', (pid,))['n']
+                        if not own else 0)
         pending=db.one('SELECT COALESCE(SUM(amount_cents-paid_cents),0) n FROM debts WHERE amount_cents>paid_cents'+(' AND socio_id=?' if own else ''),(socio_id,) if own else ())['n']
-        R['cards']=[card('Ingresos del periodo',fmt(total_income),'▥','green'),card('Pagos recibidos',fmt(total_pay),'▣','blue'),card('Deuda pendiente total',fmt(pending),'◇','red')]
+        R['cards']=([card('Ingresos del periodo',fmt(total_income),'▥','green'),card('Pagos recibidos',fmt(total_pay),'▣','blue'),card('Deuda pendiente total',fmt(pending),'◇','red')]
+                    if own else
+                    [card('Ingresos del periodo',fmt(total_income+total_pay),'▥','green'),card('Egresos del periodo',fmt(total_expenses),'▣','red'),card('Deuda pendiente total',fmt(pending),'◇','orange')])
         if tab in ('ingresos','historial','resumen'):
             settable('Ingresos registrados',['ID','Fecha','Concepto','Socio','Valor','Método'],'''SELECT i.id,i.day,i.concept,COALESCE(s.name,'Compañía'),i.amount_cents,i.method FROM incomes i LEFT JOIN socios s ON s.id=i.socio_id WHERE i.period_id=?'''+own_filter+' ORDER BY i.day DESC,i.id DESC LIMIT 150',own_args,lambda x:[x['id'],x['day'],x['concept'],x["COALESCE(s.name,'Compañía')"],fmt(x['amount_cents']),x['method']])
             R.update(new_kind='ingresos',new_label='Registrar ingreso')
-        elif tab=='pagos':
-            settable('Pagos de deudas',['ID','Fecha','Socio','Deuda','Abono','Método'],'''SELECT p.id,p.day,s.name,d.concept,p.amount_cents,p.method FROM payments p JOIN socios s ON s.id=p.socio_id JOIN debts d ON d.id=p.debt_id WHERE p.period_id=?'''+(' AND p.socio_id=?' if own else '')+' ORDER BY p.id DESC LIMIT 150',payargs,lambda x:[x['id'],x['day'],x['name'],x['concept'],fmt(x['amount_cents']),x['method']])
-            R.update(new_kind='pagos',new_label='Registrar pago')
+        elif tab=='egresos':
+            settable('Egresos registrados',['ID','Fecha','Categoría','Concepto','Beneficiario','Monto','Método'],'''SELECT id,day,category,concept,recipient,amount_cents,method FROM expenses WHERE period_id=? ORDER BY day DESC,id DESC LIMIT 150''',(pid,),lambda x:[x['id'],x['day'],x['category'],x['concept'],x['recipient'] or '—',fmt(x['amount_cents']),x['method']])
+            R.update(new_kind='egresos',new_label='Registrar egreso')
         elif tab=='deudas':
             settable('Deudas y saldos pendientes',['ID','Socio','Concepto','Total','Abonado','Pendiente'],'''SELECT d.id,s.name,d.concept,d.amount_cents,d.paid_cents,(d.amount_cents-d.paid_cents) remaining FROM debts d JOIN socios s ON s.id=d.socio_id WHERE 1=1'''+(' AND d.socio_id=?' if own else '')+' ORDER BY d.id DESC LIMIT 150',(socio_id,) if own else (),lambda x:[x['id'],x['name'],x['concept'],fmt(x['amount_cents']),fmt(x['paid_cents']),fmt(x['remaining'])])
             R.update(new_kind='deudas',new_label='Registrar deuda')
@@ -132,7 +136,11 @@ def modules(db, key, tab, role_name='', socio_id=None, weekly_from='', weekly_to
                      show_weekly_list=weekly_list,
                      new_kind=None)
         R['side_title']='Periodo activo'
-        R['side_rows']=[('Desde',p['starts']),('Hasta',p['ends']),('Estado','Cerrado' if p['closed_at'] else 'Abierto'),('Cobrado',fmt(total_income+total_pay))]
+        R['side_rows']=[('Desde',p['starts']),('Hasta',p['ends']),('Estado','Cerrado' if p['closed_at'] else 'Abierto')]
+        if own:
+            R['side_rows'].append(('Cobrado',fmt(total_income+total_pay)))
+        else:
+            R['side_rows'].extend([('Ingresos',fmt(total_income+total_pay)),('Egresos',fmt(total_expenses)),('Balance',fmt(total_income+total_pay-total_expenses))])
     elif key=='multas':
         q=' AND f.socio_id=?' if own else ''
         args=(socio_id,) if own else ()
@@ -175,7 +183,7 @@ def modules(db, key, tab, role_name='', socio_id=None, weekly_from='', weekly_to
                      section_description='Indicadores consolidados. Los detalles de cada tema están en su pestaña para evitar repetir registros.')
         elif tab=='financieros':
             R.update(section='Finanzas y gestión mensual',
-                     section_description='El detalle financiero reúne ingresos y pagos; el informe gerencial resume los movimientos del mes sin volver a registrarlos.')
+                     section_description='Consulte los movimientos financieros y descargue el balance mensual de ingresos, abonos recibidos, egresos y saldo neto.')
         elif tab=='multas':
             R['cards']=[card('Multas del ciclo',active_fines['count'],'⚒'),
                         card('Monto registrado',fmt(active_fines['total']),'▤'),
@@ -191,7 +199,7 @@ def modules(db, key, tab, role_name='', socio_id=None, weekly_from='', weekly_to
                         card('Multas acumuladas',active_fines['count'],'▤'),
                         card('Monto acumulado',fmt(active_fines['total']),'◇')]
             R.update(section='Cierre del ciclo de multas',
-                     section_description='El cierre conserva el historial y los totales. No elimina multas ni cierra ingresos, pagos o deudas.')
+                     section_description='El cierre conserva el historial y los totales. No elimina multas ni cierra ingresos, egresos, abonos o deudas.')
         elif tab=='historial':
             R.update(section='Ciclos cerrados de multas',
                      fine_history=db.all('''SELECT c.id,c.label,c.starts,c.ends,c.closed_at,c.snapshot,

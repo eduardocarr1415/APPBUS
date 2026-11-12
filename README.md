@@ -29,12 +29,12 @@ Si PowerShell bloquea activar entornos virtuales, puede ejecutar `\.venv\Scripts
 - **Inicio:** indicadores, deudas por socio, reuniones próximas y actividad.
 - **Socios:** registro de socios, asignación de unidades y traspasos de buses con acciones y derechos. El historial conserva cada propietario anterior y nuevo; cada socio puede tener una sola unidad activa.
 - **Actas y reuniones:** Actas / Reuniones / Convocatorias / Asistencia; redacción y archivos PDF o imágenes adjuntas.
-- **Ingresos económicos:** Resumen / Ingresos / Pagos / Deudas / Marcación semanal / Historial. La marcación aplica un aporte común a todos los socios activos de una fecha; el detalle se abre desde «Ver lista», admite abonos parciales y calcula el pendiente según lo recaudado.
+- **Finanzas:** Resumen / Ingresos / Egresos / Deudas / Marcación semanal / Historial. Los egresos registran fecha, categoría, concepto, beneficiario, monto y método de pago. Los abonos a deudas se registran desde Deudas. La marcación aplica un aporte común a todos los socios activos de una fecha; el detalle se abre desde «Ver lista», admite abonos parciales y calcula el pendiente según lo recaudado.
 - **Multas:** Multas / Pendientes / Pagadas. Una nueva multa crea una deuda vinculada. Al pagar esa deuda, la multa queda pagada.
 - **Unidades y vehículos:** Unidades / Vehículos / Cambios. Se conserva cada reasignación.
 - **Vigilancia:** rol de acceso para multas, sin registro digital de las verificaciones diarias de unidades.
 - **Cierre anual:** cierre por ciclo de multas con fecha efectiva seleccionable; cada cierre conserva las multas y sus totales.
-- **Reportes:** resumen ejecutivo, informes financieros, informe gerencial mensual, multas por ciclo, asistencia, inventario de unidades e historial de cierres en PDF y CSV. Los controles diarios de unidades no se digitalizan.
+- **Reportes:** resumen ejecutivo, informes financieros, balance económico mensual de ingresos y egresos, saldo disponible inicial y final calculado con los movimientos registrados, multas por ciclo, asistencia, inventario de unidades e historial de cierres en PDF y CSV. Los controles diarios de unidades no se digitalizan.
 - **Usuarios y permisos:** Usuarios / Roles / Permisos / Auditoría.
 
 Los formularios de alta y edición están en pantallas separadas. Los campos se validan en el navegador y nuevamente en el servidor: en socios, nombre, cédula, celular y correo son obligatorios; el nombre solo admite letras y separadores habituales, la cédula solo números hasta 10 dígitos, el celular exactamente 10 y el correo debe tener formato válido. Los errores señalan el campo que debe corregirse. Las demás entradas también tienen límites y validaciones según su tipo. Los cobros originales se guardan como operaciones inmutables: este prototipo no permite editar movimientos históricos para evitar cambios de saldos sin rastro.

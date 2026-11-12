@@ -9,11 +9,11 @@ from .security import DEFAULT_ADMIN_PASSWORD_HASH
 PERMISSIONS = {
     'socios.ver': 'Consultar socios', 'socios.crear': 'Registrar y editar socios',
     'actas.ver': 'Consultar reuniones y actas', 'actas.editar': 'Gestionar reuniones, actas, convocatorias y asistencia',
-    'finanzas.ver': 'Consultar economía y deudas', 'finanzas.editar': 'Registrar ingresos, pagos, deudas y marcaciones',
+    'finanzas.ver': 'Consultar ingresos, egresos y deudas', 'finanzas.editar': 'Registrar ingresos, egresos, pagos y deudas',
     'multas.ver': 'Consultar multas', 'multas.editar': 'Registrar y actualizar multas',
     'unidades.ver': 'Consultar unidades y vehículos', 'unidades.editar': 'Gestionar unidades y cambios',
     'reportes.ver': 'Abrir módulo de reportes',
-    'reportes.general': 'Descargar informe general', 'reportes.finanzas': 'Descargar ingresos y pagos',
+    'reportes.general': 'Descargar informe general', 'reportes.finanzas': 'Descargar informes financieros',
     'reportes.deudas': 'Descargar deudas', 'reportes.multas': 'Descargar multas',
     'reportes.asistencia': 'Descargar asistencia', 'reportes.unidades': 'Descargar unidades',
     'cierres.ejecutar': 'Cerrar el ciclo anual de multas',
@@ -116,6 +116,12 @@ CREATE TABLE IF NOT EXISTS incomes (
  concept TEXT NOT NULL, category TEXT NOT NULL, amount_cents INTEGER NOT NULL CHECK(amount_cents>0),
  method TEXT NOT NULL, day TEXT NOT NULL, created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS expenses (
+ id INTEGER PRIMARY KEY, period_id INTEGER NOT NULL REFERENCES periods(id), category TEXT NOT NULL,
+ concept TEXT NOT NULL, recipient TEXT NOT NULL DEFAULT '', amount_cents INTEGER NOT NULL CHECK(amount_cents>0),
+ method TEXT NOT NULL, day TEXT NOT NULL, created_by INTEGER REFERENCES users(id),
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS debts (
  id INTEGER PRIMARY KEY, period_id INTEGER NOT NULL REFERENCES periods(id), socio_id INTEGER NOT NULL REFERENCES socios(id),
  concept TEXT NOT NULL, amount_cents INTEGER NOT NULL CHECK(amount_cents>0), paid_cents INTEGER NOT NULL DEFAULT 0,
@@ -158,6 +164,7 @@ CREATE TABLE IF NOT EXISTS system_settings (
  value TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_incomes_period ON incomes(period_id,day);
+CREATE INDEX IF NOT EXISTS idx_expenses_period ON expenses(period_id,day);
 CREATE INDEX IF NOT EXISTS idx_payments_period ON payments(period_id,day);
 CREATE INDEX IF NOT EXISTS idx_debts_socio ON debts(socio_id);
 CREATE INDEX IF NOT EXISTS idx_fines_period ON fines(period_id);
@@ -358,7 +365,7 @@ class Database:
         'title_dashboard': 'Dashboard',
         'title_socios': 'Socios',
         'title_actas': 'Actas y reuniones',
-        'title_finanzas': 'Ingresos económicos',
+        'title_finanzas': 'Finanzas',
         'title_multas': 'Multas',
         'title_unidades': 'Unidades y vehículos',
         'title_reportes': 'Reportes',

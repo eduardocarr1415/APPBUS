@@ -79,7 +79,8 @@ def create_app(db_path=None, testing=False):
     def parent(kind):
         return {'socios':'/socios','traspasos':'/socios?tab=traspasos','vehiculos':'/unidades?tab=vehiculos','unidades':'/unidades','cambios':'/unidades?tab=cambios',
                 'reuniones':'/actas?tab=reuniones','actas':'/actas?tab=actas','convocatorias':'/actas?tab=convocatorias',
-                'asistencia':'/actas?tab=asistencia','ingresos':'/finanzas?tab=ingresos','pagos':'/finanzas?tab=pagos',
+                'asistencia':'/actas?tab=asistencia','ingresos':'/finanzas?tab=ingresos',
+                'egresos':'/finanzas?tab=egresos','pagos':'/finanzas?tab=deudas',
                 'deudas':'/finanzas?tab=deudas','multas':'/multas',
                 'usuarios':'/usuarios'}.get(kind,'/')
 
@@ -670,7 +671,7 @@ def create_app(db_path=None, testing=False):
                         fine_cycle_id:int=0,month:str=''):
         permitted(request,'reportes.ver')
         if kind=='gerencia':
-            permitted(request,'reportes.general')
+            permitted(request,'reportes.finanzas')
         elif kind in REPORT_TYPES:
             permitted(request,'reportes.'+kind)
         if kind not in REPORT_TYPES or format not in ('pdf','csv'):raise HTTPException(404,'Tipo de reporte no disponible.')
@@ -681,7 +682,7 @@ def create_app(db_path=None, testing=False):
                     'ends':cycle['ends'] or date.today().isoformat()}
             heads,rows=build_rows(db,kind,0,fine_cycle_id=cycle['id'])
             filename=f'reporte_multas_{cycle["label"]}.{format}'
-        elif kind=='gerencia':
+        elif kind in ('gerencia','finanzas') and month:
             try:
                 month_date=date.fromisoformat(month+'-01')
             except ValueError as exc:
@@ -692,7 +693,8 @@ def create_app(db_path=None, testing=False):
             period={'starts':month_date.isoformat(),
                     'ends':(next_month-timedelta(days=1)).isoformat()}
             heads,rows=build_rows(db,kind,0,month=month)
-            filename=f'informe_gerencial_{month}.{format}'
+            prefix='informe_gerencial' if kind=='gerencia' else 'reporte_finanzas'
+            filename=f'{prefix}_{month}.{format}'
         else:
             period=db.one('SELECT * FROM periods WHERE id=?',(period_id,)) if period_id else db.current_period()
             if not period:raise HTTPException(404,'Periodo no encontrado.')
@@ -1025,7 +1027,12 @@ def create_app(db_path=None, testing=False):
         permitted(request,perm)
         if module_name=='auditoria' and current(request)['role']!='Administrador':
             raise HTTPException(403,'Apartado reservado exclusivamente para el Administrador.')
-        if not tab or tab not in dict(TABS[module_name]): tab=TABS[module_name][0][0]
+        tabs=TABS[module_name]
+        if module_name=='finanzas' and not has(request,'finanzas.editar'):
+            tabs=[item for item in tabs if item[0]!='egresos']
+        if module_name=='finanzas' and tab=='egresos' and not has(request,'finanzas.editar'):
+            raise HTTPException(403,'No tiene permiso para consultar los egresos.')
+        if not tab or tab not in dict(tabs): tab=tabs[0][0]
         u=current(request)
         weekly_from=request.query_params.get('desde','').strip() if module_name=='finanzas' and tab=='marcaciones' else ''
         weekly_to=request.query_params.get('hasta','').strip() if module_name=='finanzas' and tab=='marcaciones' else ''
@@ -1157,9 +1164,9 @@ def create_app(db_path=None, testing=False):
             )
 
         available_reports={k:v for k,v in REPORT_TYPES.items()
-                           if has(request,'reportes.general' if k=='gerencia' else 'reportes.'+k)}
+                           if has(request,'reportes.finanzas' if k=='gerencia' else 'reportes.'+k)}
         return render(request,'module.html',active=module_name,mod=module_name,tab=tab,
-                      tabs=TABS[module_name],title=TITLES[module_name],subtitle=SUBTITLES[module_name],data=data,fmt=fmt,available_reports=available_reports,
+                      tabs=tabs,title=TITLES[module_name],subtitle=SUBTITLES[module_name],data=data,fmt=fmt,available_reports=available_reports,
                       can_edit=has(request,'roles.editar'),can_close=has(request,'cierres.ejecutar'),**extra)
 
     return app

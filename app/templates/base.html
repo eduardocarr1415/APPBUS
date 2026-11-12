@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <title>{% block title %}{{ settings.company_name|default('Compañía de Transportes Guaytacama') }}{% endblock %} · {{ settings.company_slogan|default('Buses Guaytacama') }}</title>
   <link rel="icon" href="{{ settings.favicon_url|default('/static/favicon.svg') }}" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=2026.8" defer>
+  <link rel="stylesheet" href="/static/style.css?v=2026.10" defer>
   <style id="dynamic-system-theme">
     :root {
       {% if settings.primary_color %}--primary-color: {{ settings.primary_color }};{% endif %}
@@ -20,7 +20,7 @@
       {% if settings.font_size %}--base-font-size: {{ settings.font_size }};{% endif %}
     }
   </style>
-  <script src="/static/app.js?v=2026.7" defer></script>
+  <script src="/static/app.js?v=2026.8" defer></script>
 </head>
 <body class="{% if not user %}auth-body{% endif %}" data-tabs-style="{{ settings.tabs_style|default('capsule') }}">
 {% if user %}

@@ -1,5 +1,18 @@
 'use strict';
 document.addEventListener('DOMContentLoaded',()=>{
+ document.querySelectorAll('[data-password-toggle]').forEach(button=>{
+  const password=document.getElementById(button.dataset.passwordToggle);
+  if(!password)return;
+  button.addEventListener('click',()=>{
+   const show=password.type==='password';
+   password.type=show?'text':'password';
+   button.setAttribute('aria-pressed',String(show));
+   button.setAttribute('aria-label',show?'Ocultar contraseña':'Mostrar contraseña');
+  button.querySelector('[data-password-icon="show"]').hidden=show;
+  button.querySelector('[data-password-icon="hide"]').hidden=!show;
+  password.focus();
+  });
+ });
  const menu=document.querySelector('[data-menu-toggle]');
  const sidebar=document.querySelector('#sidebar');
  const backdrop=document.querySelector('#sidebar-backdrop') || document.querySelector('.sidebar-backdrop');
