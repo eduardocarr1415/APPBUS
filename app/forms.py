@@ -8,7 +8,7 @@ from .db import Database
 PERM_CREATE = {
  'socios':'socios.crear','traspasos':'socios.crear','vehiculos':'unidades.editar','unidades':'unidades.editar','cambios':'unidades.editar',
  'reuniones':'actas.editar','actas':'actas.editar','convocatorias':'actas.editar','asistencia':'actas.editar',
- 'ingresos':'finanzas.editar','deudas':'finanzas.editar','pagos':'finanzas.editar',
+ 'ingresos':'finanzas.editar','egresos':'finanzas.editar','deudas':'finanzas.editar','pagos':'finanzas.editar',
  'multas':'multas.editar','usuarios':'usuarios.editar'
 }
 
@@ -79,6 +79,7 @@ def spec(db,kind):
      'convocatorias':('Crear convocatoria',[field('meeting_id','Reunión','select',options=meetings),field('notice','Texto de la convocatoria','textarea')]),
      'asistencia':('Registrar asistencia',[field('meeting_id','Reunión','select',options=meetings),field('socio_id','Socio','select',options=socios),field('status','Asistencia','select',options=[('Asistió','Asistió'),('Faltó','Faltó'),('Justificó','Justificó')])]),
      'ingresos':('Registrar ingreso',[field('day','Fecha','date'),field('socio_id','Socio','select',False,[('', 'Ingreso de la compañía')]+socios),field('category','Tipo de ingreso','select',options=[('Aporte','Aporte'),('Cuota','Cuota'),('Servicio','Servicio'),('Cambio de vehículo','Cambio de vehículo'),('Otros','Otros')]),field('concept','Concepto'),field('amount','Monto (S/)','money'),field('method','Método de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
+     'egresos':('Registrar egreso',[field('day','Fecha','date'),field('category','Categoría del egreso','select',options=[('Servicios básicos','Servicios básicos'),('Mantenimiento','Mantenimiento'),('Combustible','Combustible'),('Repuestos','Repuestos'),('Administración','Administración'),('Otros','Otros')]),field('concept','Concepto'),field('recipient','Beneficiario o proveedor',required=False),field('amount','Monto (S/)','money'),field('method','Método de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
      'deudas':('Registrar deuda',[field('socio_id','Socio','select',options=socios),field('concept','Concepto'),field('amount','Monto (S/)','money'),field('issued','Fecha de emisión','date'),field('due','Vencimiento','date',False)]),
      'pagos':('Registrar pago de deuda',[field('debt_id','Deuda pendiente','select',options=debts),field('amount','Monto abonado (S/)','money'),field('day','Fecha','date'),field('method','Medio de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
      'multas':('Registrar multa',[field('socio_id','Socio o conductor','select',options=socios),field('unit_id','Unidad','select',False,[('','Sin asignar')]+unidades),field('category','Categoría','select',options=[('Atraso','Atraso'),('Minutos','Minutos'),('Radio','Radio'),('Trabajo','Trabajo'),('Otros','Otros')]),field('reason','Motivo de la multa'),field('occurred_at','Fecha','date'),field('amount','Monto (S/)','money')]),
@@ -139,7 +140,7 @@ def save(db, kind, data, uid, existing_id=None, ip=None):
         period=Database.ensure_period(con,date.today())
         if kind not in ('socios','traspasos','vehiculos','unidades','reuniones','actas','convocatorias','asistencia','usuarios','multas') and period['closed_at']:
             raise ValueError('No se puede registrar: el periodo está cerrado.')
-        financial_date={'cambios':'changed_at','ingresos':'day','deudas':'issued','pagos':'day',
+        financial_date={'cambios':'changed_at','ingresos':'day','egresos':'day','deudas':'issued','pagos':'day',
                         }.get(kind)
         if financial_date and not (period['starts']<=v[financial_date]<=period['ends']):
             raise ValueError(f'La fecha debe estar dentro del periodo activo ({period["starts"]} a {period["ends"]}).')
@@ -228,6 +229,9 @@ def save(db, kind, data, uid, existing_id=None, ip=None):
         elif kind=='ingresos':
             if not v['amount']: raise ValueError('El monto debe ser mayor que cero.')
             rid=con.execute('INSERT INTO incomes(period_id,socio_id,category,concept,amount_cents,method,day,created_by) VALUES(?,?,?,?,?,?,?,?)',(period['id'],nullable('socio_id'),v['category'],v['concept'],v['amount'],v['method'],v['day'],uid)).lastrowid
+        elif kind=='egresos':
+            if not v['amount']: raise ValueError('El monto debe ser mayor que cero.')
+            rid=con.execute('INSERT INTO expenses(period_id,category,concept,recipient,amount_cents,method,day,created_by) VALUES(?,?,?,?,?,?,?,?)',(period['id'],v['category'],v['concept'],v['recipient'],v['amount'],v['method'],v['day'],uid)).lastrowid
         elif kind=='deudas':
             if not v['amount']: raise ValueError('El monto debe ser mayor que cero.')
             rid=con.execute('INSERT INTO debts(period_id,socio_id,concept,amount_cents,issued,due,created_by) VALUES(?,?,?,?,?,?,?)',(period['id'],nullable('socio_id'),v['concept'],v['amount'],v['issued'],v['due'],uid)).lastrowid
@@ -272,6 +276,10 @@ def save(db, kind, data, uid, existing_id=None, ip=None):
             amt_val = v.get('amount', 0)
             amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)
             summary = f"Ingreso de {amt_str} - {v.get('concept')} ({v.get('category')})"
+        elif kind == 'egresos':
+            amt_val = v.get('amount', 0)
+            amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)
+            summary = f"Egreso de {amt_str} - {v.get('concept')} ({v.get('category')})"
         elif kind == 'deudas':
             amt_val = v.get('amount', 0)
             amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)

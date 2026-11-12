@@ -11,7 +11,7 @@ from reportlab.lib.pagesizes import A4
 
 REPORT_TYPES = {
     'general':'Reporte general', 'finanzas':'Reporte financiero',
-    'gerencia':'Informe gerencial mensual',
+    'gerencia':'Balance económico mensual',
     'deudas':'Reporte de deudas', 'multas':'Reporte de multas',
     'asistencia':'Reporte de asistencia', 'unidades':'Reporte de unidades'
 }
@@ -23,16 +23,29 @@ def build_rows(db, kind, period_id, month=None, fine_cycle_id=None):
     if kind=='gerencia':
         if not month:
             raise ValueError('Seleccione el mes del informe gerencial.')
+        month_start=f'{month}-01'
         income=db.one("SELECT COALESCE(SUM(amount_cents),0) AS total FROM incomes WHERE substr(day,1,7)=?",(month,))['total']
         payments=db.one("SELECT COALESCE(SUM(amount_cents),0) AS total FROM payments WHERE substr(day,1,7)=?",(month,))['total']
+        expenses=db.one("SELECT COALESCE(SUM(amount_cents),0) AS total FROM expenses WHERE substr(day,1,7)=?",(month,))['total']
+        opening_income=db.one('SELECT COALESCE(SUM(amount_cents),0) AS total FROM incomes WHERE day<?',(month_start,))['total']
+        opening_payments=db.one('SELECT COALESCE(SUM(amount_cents),0) AS total FROM payments WHERE day<?',(month_start,))['total']
+        opening_expenses=db.one('SELECT COALESCE(SUM(amount_cents),0) AS total FROM expenses WHERE day<?',(month_start,))['total']
         debts=db.one("SELECT COALESCE(SUM(amount_cents),0) AS total FROM debts WHERE substr(issued,1,7)=?",(month,))['total']
         fines=db.one("SELECT COUNT(*) AS count,COALESCE(SUM(amount_cents),0) AS total FROM fines WHERE substr(occurred_at,1,7)=?",(month,))
         meetings=db.one("SELECT COUNT(*) AS count FROM meetings WHERE substr(meeting_date,1,7)=?",(month,))['count']
         attendance=db.one('''SELECT COUNT(*) AS count FROM attendance a JOIN meetings m ON m.id=a.meeting_id
             WHERE substr(m.meeting_date,1,7)=?''',(month,))['count']
+        monthly_income=income+payments
+        opening_balance=opening_income+opening_payments-opening_expenses
+        monthly_balance=monthly_income-expenses
         return ['Indicador','Resultado'],[
+            ['Saldo disponible al inicio del mes',fmt(opening_balance)],
             ['Ingresos registrados',fmt(income)],
-            ['Abonos recibidos',fmt(payments)],
+            ['Abonos de deudas recibidos',fmt(payments)],
+            ['Total de ingresos del mes',fmt(monthly_income)],
+            ['Total de egresos',fmt(expenses)],
+            ['Balance neto del mes',fmt(monthly_balance)],
+            ['Saldo disponible al cierre del mes',fmt(opening_balance+monthly_balance)],
             ['Deudas emitidas',fmt(debts)],
             ['Multas registradas',str(fines['count'])],
             ['Monto de multas registradas',fmt(fines['total'])],
@@ -40,9 +53,27 @@ def build_rows(db, kind, period_id, month=None, fine_cycle_id=None):
             ['Registros de asistencia',str(attendance)],
         ]
     if kind == 'finanzas':
-        income=db.all('SELECT i.day AS Fecha, i.concept AS Concepto, COALESCE(s.name,\'Compañía\') AS Socio, i.category AS Tipo, i.amount_cents AS Céntimos FROM incomes i LEFT JOIN socios s ON i.socio_id=s.id WHERE i.period_id=? ORDER BY i.day DESC',(period_id,))
-        payment=db.all('SELECT p.day AS Fecha, d.concept AS Concepto, s.name AS Socio, \'Pago de deuda\' AS Tipo, p.amount_cents AS Céntimos FROM payments p JOIN debts d ON d.id=p.debt_id JOIN socios s ON s.id=p.socio_id WHERE p.period_id=? ORDER BY p.day DESC',(period_id,))
-        return ['Fecha','Concepto','Socio','Tipo','Monto'], [[r['Fecha'],r['Concepto'],r['Socio'],r['Tipo'],fmt(r['Céntimos'])] for r in income+payment]
+        if month:
+            income_filter='substr(i.day,1,7)=?'
+            payment_filter='substr(p.day,1,7)=?'
+            expense_filter='substr(day,1,7)=?'
+            income_args=payment_args=expense_args=(month,)
+        else:
+            income_filter='i.period_id=?'
+            payment_filter='p.period_id=?'
+            expense_filter='period_id=?'
+            income_args=payment_args=expense_args=(period_id,)
+        income=db.all(f'''SELECT i.day AS Fecha, i.concept AS Concepto, COALESCE(s.name,'Compañía') AS Socio,
+            i.category AS Tipo, i.amount_cents AS Céntimos FROM incomes i LEFT JOIN socios s ON i.socio_id=s.id
+            WHERE {income_filter} ORDER BY i.day DESC,i.id DESC''',income_args)
+        payment=db.all(f'''SELECT p.day AS Fecha, d.concept AS Concepto, s.name AS Socio,
+            'Pago de deuda' AS Tipo, p.amount_cents AS Céntimos FROM payments p
+            JOIN debts d ON d.id=p.debt_id JOIN socios s ON s.id=p.socio_id
+            WHERE {payment_filter} ORDER BY p.day DESC,p.id DESC''',payment_args)
+        expenses=db.all(f'''SELECT day AS Fecha,concept AS Concepto,recipient AS Beneficiario,
+            category AS Tipo,amount_cents AS Céntimos FROM expenses WHERE {expense_filter}
+            ORDER BY day DESC,id DESC''',expense_args)
+        return ['Fecha','Concepto','Socio / beneficiario','Tipo','Monto'], [[r['Fecha'],r['Concepto'],r['Socio'],r['Tipo'],fmt(r['Céntimos'])] for r in income+payment]+[[r['Fecha'],r['Concepto'],r['Beneficiario'] or '—',r['Tipo'],fmt(r['Céntimos'])] for r in expenses]
     if kind=='deudas':
         rows=db.all('SELECT s.name AS Socio,d.concept AS Concepto,d.issued AS Fecha,d.amount_cents AS Total,d.paid_cents AS Abonado FROM debts d JOIN socios s ON s.id=d.socio_id WHERE d.period_id=? ORDER BY d.id DESC',(period_id,))
         return ['Socio','Concepto','Fecha','Total','Abonado','Pendiente'], [[r['Socio'],r['Concepto'],r['Fecha'],fmt(r['Total']),fmt(r['Abonado']),fmt(r['Total']-r['Abonado'])] for r in rows]
