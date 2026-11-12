@@ -2,6 +2,7 @@
 import re
 import json
 import sqlite3
+from html import unescape
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -74,6 +75,36 @@ def test_csrf_and_access_control(environment):
     assert c.post('/nuevo/multas',data={'socio_id':str(sid)}).status_code==403
     assert c.get('/usuarios').status_code==403
 
+def test_module_search_and_ten_row_pagination(environment):
+    app,db,c,*_=environment
+    with db.connection() as con:
+        for index in range(12):
+            con.execute('INSERT INTO socios(name,joined,active) VALUES(?,?,?)',
+                        (f'Registro Paginado {index:02}',date.today().isoformat(),
+                         0 if index==11 else 1))
+    login(c)
+    first=c.get('/socios?tab=listado')
+    assert first.status_code==200
+    first_body=re.search(r'<tbody>(.*?)</tbody>',first.text,re.S).group(1)
+    assert len(re.findall(r'<tr\b',first_body))==10
+    assert 'Registro Paginado 11' not in first_body
+    next_href=re.search(r'href="([^"]*page=2[^"]*)"',first.text).group(1)
+    assert '&gt;&gt;</a>' in first.text and 'Anterior</a>' not in first.text
+    next_page=c.get(unescape(next_href))
+    assert next_page.status_code==200, next_href
+
+    second=next_page
+    assert second.status_code==200 and 'Registro Paginado 11' in second.text
+    second_body=re.search(r'<tbody>(.*?)</tbody>',second.text,re.S).group(1)
+    assert len(re.findall(r'<tr\b',second_body))==4
+
+    searched=c.get('/socios?tab=listado&q=Registro+Paginado+11')
+    assert searched.status_code==200 and 'Registro Paginado 11' in searched.text
+    assert 'Registro Paginado 10' not in searched.text
+    assert 'Inactivo' in searched.text
+    assert c.get('/socios?tab=listado&page=0').status_code==400
+    assert c.get('/socios?tab=listado&q='+('x'*101)).status_code==400
+
 def test_fines_create_debt_then_payment(environment):
     app,db,c,sid,other,*_=environment
     login(c)
@@ -103,7 +134,7 @@ def test_socio_only_sees_own_finances(environment):
         con.execute('INSERT INTO units(code,socio_id) VALUES(?,?)',('U-001',sid))
         con.execute('INSERT INTO units(code,socio_id) VALUES(?,?)',('U-999',other))
     login(c,'socio')
-    r=c.get('/finanzas?tab=deudas')
+    r=c.get('/finanzas?tab=deudas&page=1&q=Deuda')
     assert r.status_code==200 and 'Deuda propia' in r.text
     assert 'Deuda privada de otro socio' not in r.text
     assert c.get('/finanzas?tab=egresos').status_code==403

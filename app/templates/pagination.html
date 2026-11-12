@@ -1,0 +1,11 @@
+{% if pagination is not defined %}{% set pagination = data.pagination %}{% endif %}
+{% if pagination %}
+<div class="table-pagination" aria-label="Paginación">
+  <span>Mostrando {{ (pagination.page - 1) * 10 + (1 if pagination.total else 0) }}–{{ (pagination.page - 1) * 10 + (pagination.total - (pagination.page - 1) * 10 if pagination.total - (pagination.page - 1) * 10 < 10 else 10) }} de {{ pagination.total }} registros</span>
+  <div class="pagination-actions">
+    {% if pagination.page > 1 %}<a class="btn secondary small" href="{{ data.pagination_base }}&amp;page={{ pagination.page - 1 }}" aria-label="Página anterior">&lt;&lt;</a>{% else %}<span class="btn secondary small disabled" aria-label="Página anterior">&lt;&lt;</span>{% endif %}
+    <span>Página {{ pagination.page }} de {{ pagination.pages }}</span>
+    {% if pagination.page < pagination.pages %}<a class="btn secondary small" href="{{ data.pagination_base }}&amp;page={{ pagination.page + 1 }}" aria-label="Página siguiente">&gt;&gt;</a>{% else %}<span class="btn secondary small disabled" aria-label="Página siguiente">&gt;&gt;</span>{% endif %}
+  </div>
+</div>
+{% endif %}

@@ -2865,44 +2865,64 @@ body {
     background: #e2e8f0;
 }
 
-@media (max-height: 850px) {
-    .brand {
-        padding: 13px 12px;
+.table-search,
+.table-pagination {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 14px 0;
+}
+
+.table-search label {
+    color: #334b6b;
+    font-size: 13px;
+    font-weight: 650;
+}
+
+.table-search input {
+    min-width: 220px;
+    max-width: 100%;
+    min-height: 38px;
+    padding: 8px 11px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.table-pagination {
+    justify-content: space-between;
+    color: #52657e;
+    font-size: 13px;
+}
+
+.pagination-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.pagination-actions .disabled,
+.pagination-actions button:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+    pointer-events: none;
+}
+
+.weekly-date-filter .table-search input,
+.weekly-status-filter .table-search input {
+    min-width: 180px;
+}
+
+@media (max-width: 600px) {
+    .table-search input {
+        flex: 1 1 100%;
+        min-width: 0;
     }
-    .bus-logo {
-        width: 34px;
-        height: 34px;
-        font-size: 24px;
-    }
-    .brand-company {
-        font-size: 13px;
-    }
-    .brand-slogan {
-        font-size: 10.5px;
-    }
-    .side-nav {
-        padding: 6px 6px;
-        gap: 2px;
-    }
-    .nav-link {
-        padding: 6px 10px;
-        font-size: 12.5px;
-        min-height: 34px;
-        gap: 10px;
-    }
-    .nav-icon {
-        font-size: 16px;
-        width: 18px;
-    }
-    .sidebar-foot {
-        padding: 6px 8px;
-        gap: 4px;
-    }
-    .bus-illustration {
-        width: 140px;
-        max-height: 52px;
-    }
-    .sidebar-foot small {
-        font-size: 9.5px;
+
+    .table-pagination {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }
