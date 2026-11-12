@@ -1,5 +1,7 @@
 """Presentation queries for separated, navigable tabs."""
 from datetime import date
+import math
+import re
 from .reports import fmt
 
 NAV = [
@@ -41,14 +43,37 @@ def table(headers, rows, keys=None):
     return {'headers':headers,'rows':rows,'keys':keys or headers}
 
 def modules(db, key, tab, role_name='', socio_id=None, weekly_from='', weekly_to='',
-            weekly_list=False, weekly_state=''):
+            weekly_list=False, weekly_state='', search='', page=1):
     """Return safe structured data; HTML is escaped by Jinja templates."""
     p=db.current_period(); pid=p['id']
     result={'cards':[],'headers':[],'rows':[],'section':'','new_kind':None,'new_label':'Nuevo registro','side_title':None,'side_rows':[]}
     R=result
+    def paged_rows(sql, args=(), term='', requested_page=1):
+        base_sql=re.sub(r'\s+LIMIT\s+\d+\s*$', '', sql.strip(), flags=re.IGNORECASE)
+        with db.connection() as con:
+            columns=[column[0] for column in con.execute(
+                f'SELECT * FROM ({base_sql}) AS records LIMIT 0',args).description]
+            conditions=[]
+            query_args=list(args)
+            if term:
+                conditions.append('('+' OR '.join(
+                    f'CAST(records."{column.replace(chr(34), chr(34)*2)}" AS TEXT) LIKE ?'
+                    for column in columns)+' )')
+                query_args.extend([f'%{term}%']*len(columns))
+            where=' WHERE '+' AND '.join(conditions) if conditions else ''
+            total=con.execute(f'SELECT COUNT(*) FROM ({base_sql}) AS records{where}',query_args).fetchone()[0]
+            page_count=max(1,math.ceil(total/10))
+            current_page=min(requested_page,page_count)
+            rows=con.execute(f'SELECT * FROM ({base_sql}) AS records{where} LIMIT 10 OFFSET ?',
+                             (*query_args,(current_page-1)*10)).fetchall()
+            rr=[dict(zip(columns,row)) for row in rows]
+        pagination={'page':current_page,'pages':page_count,'total':total,'search':term}
+        return rr,pagination
     def settable(title, headers, sql, args=(), transform=None):
-        rr=db.all(sql,args)
-        R.update(section=title,headers=headers,rows=[transform(x) if transform else list(x.values()) for x in rr])
+        rr,pagination=paged_rows(sql,args,search,page)
+        R.update(section=title,headers=headers,
+                 rows=[transform(x) if transform else list(x.values()) for x in rr],
+                 pagination=pagination)
     # Adjacency to financial data is never global for Socio, only own records.
     own = role_name == 'Socio'
     if key == 'socios':
@@ -116,22 +141,24 @@ def modules(db, key, tab, role_name='', socio_id=None, weekly_from='', weekly_to
             totals=db.one('''SELECT COALESCE(SUM(w.paid_cents),0) AS collected,
                 COALESCE(SUM(w.amount_cents-w.paid_cents),0) AS pending
                 FROM weekly_marks w'''+where,args)
-            dates=db.all('''SELECT w.week_start,COUNT(*) AS socios,
+            dates,dates_pagination=paged_rows('''SELECT w.week_start,COUNT(*) AS socios,
                 COALESCE(SUM(w.paid_cents),0) AS collected,
                 COALESCE(SUM(w.amount_cents-w.paid_cents),0) AS pending
-                FROM weekly_marks w'''+where+' GROUP BY w.week_start ORDER BY w.week_start DESC',args)
+                FROM weekly_marks w'''+where+' GROUP BY w.week_start ORDER BY w.week_start DESC',args,search,page)
             mark_clauses=clauses.copy()
             mark_args=args.copy()
             if weekly_state:
                 mark_clauses.append('w.state=?')
                 mark_args.append(weekly_state)
             mark_where=' WHERE '+' AND '.join(mark_clauses) if mark_clauses else ''
-            marks=db.all('''SELECT w.id,w.socio_id,s.name,w.week_start,w.amount_cents,w.paid_cents,w.state,
+            marks,marks_pagination=paged_rows('''SELECT w.id,w.socio_id,s.name,w.week_start,w.amount_cents,w.paid_cents,w.state,
                 w.paid_at FROM weekly_marks w JOIN socios s ON s.id=w.socio_id'''
-                +mark_where+' ORDER BY w.week_start DESC,s.name',mark_args) if weekly_list else []
+                +mark_where+' ORDER BY w.week_start DESC,s.name',mark_args,search,page) if weekly_list else ([],None)
             R['cards']=[card('Total recaudado',fmt(totals['collected']),'✓','green'),
                         card('Total pendiente',fmt(totals['pending']),'◇','orange')]
             R.update(section='Marcación semanal',weekly_dates=dates,weekly_marks=marks,
+                     weekly_dates_pagination=dates_pagination,
+                     weekly_marks_pagination=marks_pagination,
                      weekly_from=weekly_from,weekly_to=weekly_to,weekly_state=weekly_state,
                      show_weekly_list=weekly_list,
                      new_kind=None)
@@ -201,11 +228,12 @@ def modules(db, key, tab, role_name='', socio_id=None, weekly_from='', weekly_to
             R.update(section='Cierre del ciclo de multas',
                      section_description='El cierre conserva el historial y los totales. No elimina multas ni cierra ingresos, egresos, abonos o deudas.')
         elif tab=='historial':
+            fine_history,fine_history_pagination=paged_rows('''SELECT c.id,c.label,c.starts,c.ends,c.closed_at,c.snapshot,
+                COUNT(f.id) AS fine_count,COALESCE(SUM(f.amount_cents),0) AS fine_total
+                FROM fine_cycles c LEFT JOIN fines f ON f.fine_cycle_id=c.id
+                WHERE c.closed_at IS NOT NULL GROUP BY c.id ORDER BY c.ends DESC,c.id DESC''',(),search,page)
             R.update(section='Ciclos cerrados de multas',
-                     fine_history=db.all('''SELECT c.id,c.label,c.starts,c.ends,c.closed_at,c.snapshot,
-                         COUNT(f.id) AS fine_count,COALESCE(SUM(f.amount_cents),0) AS fine_total
-                         FROM fine_cycles c LEFT JOIN fines f ON f.fine_cycle_id=c.id
-                         WHERE c.closed_at IS NOT NULL GROUP BY c.id ORDER BY c.ends DESC,c.id DESC'''))
+                     fine_history=fine_history,pagination=fine_history_pagination)
     elif key=='usuarios':
         R['cards']=[card('Usuarios totales',db.one('SELECT COUNT(*) n FROM users')['n'],'♙'),card('Usuarios activos',db.one('SELECT COUNT(*) n FROM users WHERE active=1')['n'],'✓','green'),card('Roles definidos',db.one('SELECT COUNT(*) n FROM roles')['n'],'▧')]
         if tab=='roles':

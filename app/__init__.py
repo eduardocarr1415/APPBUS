@@ -7,7 +7,7 @@ import sqlite3
 from datetime import date, timedelta
 from html import escape
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, FileResponse, JSONResponse
@@ -1192,7 +1192,18 @@ def create_app(db_path=None, testing=False):
             raise HTTPException(400,'La fecha inicial no puede ser posterior a la fecha final.')
         if weekly_state not in ('','Pagado','Pendiente'):
             raise HTTPException(400,'El estado de marcación no es válido.')
-        data=modules(db,module_name,tab,u['role'],u['socio_id'],weekly_from,weekly_to,weekly_list,weekly_state)
+        search=request.query_params.get('q','').strip()
+        if len(search)>100:
+            raise HTTPException(400,'La búsqueda no puede superar los 100 caracteres.')
+        raw_page=request.query_params.get('page','1')
+        if not raw_page.isdigit() or int(raw_page)<1:
+            raise HTTPException(400,'El número de página no es válido.')
+        page=int(raw_page)
+        data=modules(db,module_name,tab,u['role'],u['socio_id'],weekly_from,weekly_to,
+                     weekly_list,weekly_state,search,page)
+        preserved=[(name,value) for name,value in request.query_params.multi_items()
+                   if name not in ('page','tab')]
+        data['pagination_base']=f'/{module_name}?{urlencode([("tab",tab),*preserved])}'
         if data.get('new_kind') and not has(request,PERM_CREATE[data['new_kind']]):data['new_kind']=None
         if module_name=='usuarios' and tab=='permisos':
             data['permission_labels']=PERMISSIONS
@@ -1296,11 +1307,12 @@ def create_app(db_path=None, testing=False):
                     'pendientes': tot - notifs
                 }
                 if not selected_meeting['notice']:
+                    agenda=selected_meeting['agenda'] or '1. Constatación del quórum.\n2. Tratamiento del orden del día.'
                     default_notice = (
                         f"Se convoca a los señores socios a la reunión de {selected_meeting['type']} "
                         f"que se llevará a cabo el día {selected_meeting['meeting_date']} a las {selected_meeting['meeting_time']} "
                         f"en {selected_meeting['location']}.\n\n"
-                        f"Orden del día:\n{selected_meeting['agenda'] or '1. Constatación del quórum.\n2. Tratamiento del orden del día.'}"
+                        f"Orden del día:\n{agenda}"
                     )
 
             extra.update(

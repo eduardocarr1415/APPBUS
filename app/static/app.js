@@ -1,5 +1,69 @@
 'use strict';
 document.addEventListener('DOMContentLoaded',()=>{
+ document.querySelectorAll('[data-client-list]').forEach((table,index)=>{
+  const body=table.tBodies[0];
+  if(!body)return;
+  const rows=Array.from(body.rows).filter(row=>!row.querySelector('.empty'));
+  if(!rows.length)return;
+  const controls=document.createElement('div');
+  controls.className='table-search client-table-search';
+  const label=document.createElement('label');
+  label.htmlFor=`client-table-search-${index}`;
+  label.textContent='Buscar';
+  const input=document.createElement('input');
+  input.id=label.htmlFor;
+  input.type='search';
+  input.placeholder='Buscar por los datos de la tabla';
+  input.setAttribute('aria-label','Buscar en la lista');
+  const nav=document.createElement('div');
+  nav.className='pagination-actions';
+  nav.setAttribute('aria-label','Paginación');
+  const summary=document.createElement('span');
+  const previous=document.createElement('button');
+  previous.type='button';
+  previous.className='btn secondary small';
+  previous.textContent='Anterior';
+  const next=document.createElement('button');
+  next.type='button';
+  next.className='btn secondary small';
+  next.textContent='Siguiente';
+  nav.append(previous,summary,next);
+  controls.append(label,input,nav);
+  table.closest('.table-wrap')?.after(controls);
+  let page=1;
+  let visibleRows=rows;
+  const render=()=>{
+   const term=input.value.trim().toLocaleLowerCase();
+   visibleRows=rows.filter(row=>row.textContent.toLocaleLowerCase().includes(term));
+   const pages=Math.max(1,Math.ceil(visibleRows.length/10));
+   page=Math.min(page,pages);
+   const start=(page-1)*10;
+   rows.forEach(row=>{row.hidden=true;});
+   visibleRows.slice(start,start+10).forEach(row=>{row.hidden=false;});
+   let empty=body.querySelector('[data-client-empty]');
+   if(!visibleRows.length){
+    if(!empty){
+     empty=document.createElement('tr');
+     empty.dataset.clientEmpty='true';
+     const cell=document.createElement('td');
+     cell.colSpan=table.tHead.rows[0].cells.length;
+     cell.className='empty';
+     cell.textContent='No hay resultados para la búsqueda.';
+     empty.append(cell);
+     body.append(empty);
+    }
+   }else if(empty){
+    empty.remove();
+   }
+   summary.textContent=`${visibleRows.length?start+1:0}–${Math.min(start+10,visibleRows.length)} de ${visibleRows.length} registros · Página ${page} de ${pages}`;
+   previous.disabled=page<=1;
+   next.disabled=page>=pages;
+  };
+  input.addEventListener('input',()=>{page=1;render();});
+  previous.addEventListener('click',()=>{if(page>1){page--;render();}});
+  next.addEventListener('click',()=>{if(page<Math.ceil(visibleRows.length/10)){page++;render();}});
+  render();
+ });
  document.querySelectorAll('[data-password-toggle]').forEach(button=>{
   const password=document.getElementById(button.dataset.passwordToggle);
   if(!password)return;
