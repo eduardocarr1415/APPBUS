@@ -69,7 +69,7 @@ def valid_date(value):
     except ValueError: raise ValueError('La fecha no es válida.')
 
 def safe_text(value, label='Campo', maxlen=250, required=True):
-    s=str(value or '').strip()
+    s = str(value or '').replace('\r\n', '\n').replace('\r', '\n').strip()
     if required and not s: raise ValueError(f'{label}: este campo es obligatorio.')
     if len(s)>maxlen: raise ValueError(f'{label}: máximo {maxlen} caracteres.')
     if any(ord(ch)<32 and ch not in '\n\t' for ch in s): raise ValueError(f'{label}: contiene caracteres no válidos.')

@@ -945,21 +945,33 @@ def create_app(db_path=None, testing=False):
         if meeting['status']=='Realizada':
             raise HTTPException(409,'La asistencia está cerrada porque la reunión ya fue marcada como realizada.')
 
+        notified_socios = db.all('''
+            SELECT socio_id FROM meeting_notifications
+            WHERE meeting_id = ? AND notified = 1
+        ''', (meeting_id,))
+        valid_socio_ids = {s['socio_id'] for s in notified_socios}
+
         all_socio_ids = [int(x) for x in f.getlist('all_socio_ids') if str(x).isdigit()]
         if not all_socio_ids:
-            db_socios = db.all('''
-                SELECT s.id FROM socios s
-                LEFT JOIN attendance a ON a.socio_id=s.id AND a.meeting_id=?
-                WHERE s.active=1 OR a.meeting_id IS NOT NULL
-            ''', (meeting_id,))
-            all_socio_ids = [s['id'] for s in db_socios]
+            all_socio_ids = list(valid_socio_ids)
+        else:
+            all_socio_ids = [sid for sid in all_socio_ids if sid in valid_socio_ids]
 
-        checked_socio_ids = {int(x) for x in f.getlist('asistio_ids') if str(x).isdigit()}
+        checked_socio_ids = {int(x) for x in f.getlist('asistio_ids') if str(x).isdigit() and int(x) in valid_socio_ids}
 
         with db.connection() as con:
             current_meeting=con.execute('SELECT status FROM meetings WHERE id=?',(meeting_id,)).fetchone()
             if not current_meeting or current_meeting['status']=='Realizada':
                 raise HTTPException(409,'La asistencia está cerrada porque la reunión ya fue marcada como realizada.')
+
+            # Desasociar de attendance a cualquier socio no notificado
+            con.execute('''
+                DELETE FROM attendance
+                WHERE meeting_id = ? AND socio_id NOT IN (
+                    SELECT socio_id FROM meeting_notifications WHERE meeting_id = ? AND notified = 1
+                )
+            ''', (meeting_id, meeting_id))
+
             for sid in all_socio_ids:
                 status = 'Asistió' if sid in checked_socio_ids else 'Faltó'
                 con.execute('''
@@ -1016,6 +1028,15 @@ def create_app(db_path=None, testing=False):
                       notified = excluded.notified,
                       notified_at = excluded.notified_at
                 ''', (meeting_id, sid, is_notif, notif_time))
+
+            # Si un socio no fue notificado (o fue desmarcado), retirarlo de attendance
+            con.execute('''
+                DELETE FROM attendance
+                WHERE meeting_id = ? AND socio_id NOT IN (
+                    SELECT socio_id FROM meeting_notifications WHERE meeting_id = ? AND notified = 1
+                )
+            ''', (meeting_id, meeting_id))
+
             Database.audit(con, current(request)['id'], 'Guardar convocatoria', 'convocatorias', meeting_id,
                            f'Convocatoria reunión {meeting_id}: {len(notified_ids)} notificados de {len(all_socio_ids)} convocados', ip=client_ip(request))
 
@@ -1196,10 +1217,10 @@ def create_app(db_path=None, testing=False):
                            (SELECT GROUP_CONCAT(u.code, ', ') FROM units u WHERE u.socio_id=s.id) AS unit_code,
                            a.status AS attendance_status
                     FROM socios s
+                    JOIN meeting_notifications mn ON mn.socio_id = s.id AND mn.meeting_id = ? AND mn.notified = 1
                     LEFT JOIN attendance a ON a.socio_id = s.id AND a.meeting_id = ?
-                    WHERE s.active = 1 OR a.meeting_id IS NOT NULL
                     ORDER BY s.name ASC
-                ''', (selected_meeting_id,))
+                ''', (selected_meeting_id, selected_meeting_id))
                 convocados_cnt = len(m_socios)
                 asistentes_cnt = sum(1 for s in m_socios if s['attendance_status'] == 'Asistió')
                 socios_attendance = [

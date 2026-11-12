@@ -415,6 +415,8 @@ def test_asistencia_view_and_selection(environment):
     with db.connection() as con:
         mid = con.execute('INSERT INTO meetings(type,topic,meeting_date,meeting_time,location) VALUES(?,?,?,?,?)',
                           ('Asamblea General', 'Reunión Ordinaria de Socios', today, '10:00', 'Auditorio')).lastrowid
+        con.execute('INSERT INTO meeting_notifications(meeting_id,socio_id,notified) VALUES(?,?,1)', (mid, sid))
+        con.execute('INSERT INTO meeting_notifications(meeting_id,socio_id,notified) VALUES(?,?,1)', (mid, other))
         con.execute('INSERT INTO attendance(meeting_id,socio_id,status) VALUES(?,?,?)', (mid, sid, 'Asistió'))
         con.execute('INSERT INTO attendance(meeting_id,socio_id,status) VALUES(?,?,?)', (mid, other, 'Faltó'))
     login(c, 'admin')
@@ -449,6 +451,8 @@ def test_asistencia_save_and_no_duplication(environment):
     with db.connection() as con:
         mid = con.execute('INSERT INTO meetings(type,topic,meeting_date,meeting_time,location) VALUES(?,?,?,?,?)',
                           ('Consejo de Administración', 'Aprobación de rutas', today, '15:00', 'Oficina')).lastrowid
+        con.execute('INSERT INTO meeting_notifications(meeting_id,socio_id,notified) VALUES(?,?,1)', (mid, sid))
+        con.execute('INSERT INTO meeting_notifications(meeting_id,socio_id,notified) VALUES(?,?,1)', (mid, other))
     login(c, 'admin')
 
     # Initial save: both attend
@@ -496,6 +500,8 @@ def test_completed_meeting_creates_individual_absence_fines_once(environment):
     with db.connection() as con:
         meeting_id=con.execute('''INSERT INTO meetings(type,topic,meeting_date,meeting_time,location)
             VALUES(?,?,?,?,?)''',('Asamblea General','Asamblea extraordinaria',today,'10:00','Sala')).lastrowid
+        con.execute('INSERT INTO meeting_notifications(meeting_id,socio_id,notified) VALUES(?,?,1)', (meeting_id, sid))
+        con.execute('INSERT INTO meeting_notifications(meeting_id,socio_id,notified) VALUES(?,?,1)', (meeting_id, other))
         con.execute('INSERT INTO attendance(meeting_id,socio_id,status) VALUES(?,?,?)',
                     (meeting_id,sid,'Faltó'))
         con.execute('INSERT INTO attendance(meeting_id,socio_id,status) VALUES(?,?,?)',
@@ -554,6 +560,7 @@ def test_asistencia_permissions_guard(environment):
     with db.connection() as con:
         mid = con.execute('INSERT INTO meetings(type,topic,meeting_date,meeting_time,location) VALUES(?,?,?,?,?)',
                           ('Asamblea Extraordinaria', 'Evaluación de tarifas', today, '11:00', 'Sala')).lastrowid
+        con.execute('INSERT INTO meeting_notifications(meeting_id,socio_id,notified) VALUES(?,?,1)', (mid, sid))
 
     # Socio can view attendance, but cannot modify
     login(c, 'socio')
@@ -674,6 +681,113 @@ def test_convocatoria_permissions_guard(environment):
         'notified_ids': [str(sid)]
     })
     assert forbidden.status_code == 403
+
+
+def test_convocatoria_multiline_and_special_chars(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    today = date.today().isoformat()
+    with db.connection() as con:
+        mid = con.execute('INSERT INTO meetings(type,topic,meeting_date,meeting_time,location) VALUES(?,?,?,?,?)',
+                          ('Asamblea General', 'Reunión Extraordinaria', today, '10:00', 'Auditorio')).lastrowid
+    login(c, 'admin')
+
+    token = csrf(c, f'/actas?tab=convocatorias&meeting_id={mid}')
+    multiline_notice = (
+        "Estimados socios de la cooperativa:\r\n\r\n"
+        "Se les convoca a la reunión ordinaria de año nuevo.\r\n"
+        "Orden del día:\r\n"
+        "1. Constatación del quórum reglamentario.\r\n"
+        "2. Lectura y aprobación del acta anterior.\r\n"
+        "3. Informe financiero y asignación de unidades (año 2026).\r\n"
+        "¿Preguntas o sugerencias? ¡Favor asistir puntualmente a las 10:00 AM!\r\n\r\n"
+        "Atentamente,\r\n"
+        "La Presidencia y Secretaría General — Cooperativa Guaytacama."
+    )
+
+    resp = c.post('/actas/convocatoria', data={
+        '_csrf': token,
+        'meeting_id': str(mid),
+        'notice': multiline_notice,
+        'all_socio_ids': [str(sid), str(other)],
+        'notified_ids': [str(sid)]
+    }, follow_redirects=True)
+
+    assert resp.status_code == 200
+    assert 'Convocatoria y notificaciones guardadas correctamente' in resp.text
+
+    m = db.one('SELECT notice FROM meetings WHERE id=?', (mid,))
+    assert m['notice'] is not None
+    assert '¿Preguntas o sugerencias? ¡Favor asistir puntualmente a las 10:00 AM!' in m['notice']
+    assert 'año 2026' in m['notice']
+    assert '\n' in m['notice']
+
+
+def test_asistencia_only_shows_and_saves_notified_socios(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    today = date.today().isoformat()
+    with db.connection() as con:
+        mid = con.execute('INSERT INTO meetings(type,topic,meeting_date,meeting_time,location) VALUES(?,?,?,?,?)',
+                          ('Asamblea General', 'Reunión Selectiva de Socios', today, '11:00', 'Sala')).lastrowid
+    login(c, 'admin')
+
+    # 1. Before saving any convocatoria notification, meeting has 0 notified socios
+    asistencia_empty = c.get(f'/actas?tab=asistencia&meeting_id={mid}')
+    assert asistencia_empty.status_code == 200
+    assert 'No hay socios convocados para esta reunión' in asistencia_empty.text
+    assert 'Socio Uno' not in asistencia_empty.text
+    assert 'Socio Dos' not in asistencia_empty.text
+
+    # 2. Save convocatoria with ONLY 'sid' notified
+    token_conv = csrf(c, f'/actas?tab=convocatorias&meeting_id={mid}')
+    resp_conv = c.post('/actas/convocatoria', data={
+        '_csrf': token_conv,
+        'meeting_id': str(mid),
+        'notice': 'Convocatoria para socio uno únicamente.\r\n¡Por favor asistir!',
+        'all_socio_ids': [str(sid), str(other)],
+        'notified_ids': [str(sid)]
+    }, follow_redirects=True)
+    assert resp_conv.status_code == 200
+
+    # 3. Asistencia now lists ONLY 'sid', NOT 'other'
+    asistencia_page = c.get(f'/actas?tab=asistencia&meeting_id={mid}')
+    assert asistencia_page.status_code == 200
+    assert 'Socio Uno' in asistencia_page.text
+    assert 'Socio Dos' not in asistencia_page.text
+    assert f'value="{sid}" class="asistencia-check"' in asistencia_page.text
+    assert f'value="{other}" class="asistencia-check"' not in asistencia_page.text
+
+    # 4. Save attendance for the notified socio
+    token_asist = csrf(c, f'/actas?tab=asistencia&meeting_id={mid}')
+    resp_asist = c.post('/actas/asistencia', data={
+        '_csrf': token_asist,
+        'meeting_id': str(mid),
+        'all_socio_ids': [str(sid)],
+        'asistio_ids': [str(sid)]
+    }, follow_redirects=True)
+    assert resp_asist.status_code == 200
+
+    # Verify SQLite: only 'sid' has an attendance record
+    att_records = db.all('SELECT socio_id, status FROM attendance WHERE meeting_id=?', (mid,))
+    assert len(att_records) == 1
+    assert att_records[0]['socio_id'] == sid
+    assert att_records[0]['status'] == 'Asistió'
+
+    # 5. If we un-notify 'sid' in convocatoria, attendance is cleaned up
+    token_conv2 = csrf(c, f'/actas?tab=convocatorias&meeting_id={mid}')
+    resp_conv2 = c.post('/actas/convocatoria', data={
+        '_csrf': token_conv2,
+        'meeting_id': str(mid),
+        'notice': 'Ningún socio notificado.',
+        'all_socio_ids': [str(sid), str(other)],
+        'notified_ids': []
+    }, follow_redirects=True)
+    assert resp_conv2.status_code == 200
+
+    # In SQLite, attendance record was removed because socio is no longer notified
+    assert db.all('SELECT * FROM attendance WHERE meeting_id=?', (mid,)) == []
+    # And page shows empty state
+    page_now = c.get(f'/actas?tab=asistencia&meeting_id={mid}')
+    assert 'No hay socios convocados para esta reunión' in page_now.text
 
 
 
