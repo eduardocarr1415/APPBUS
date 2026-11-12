@@ -28,6 +28,7 @@
   <div class="notice info">
     Este traspaso cambia el propietario de la unidad y deja constancia de la venta
     del bus con sus acciones y derechos. El nuevo socio no puede tener otra unidad activa.
+    Al guardar, el valor indicado se registrará automáticamente como ingreso de la compañía.
   </div>
 {% endif %}
 
@@ -164,7 +165,7 @@
 
     <div class="form-actions">
       <a class="btn secondary" href="{{ cancel }}">Cancelar</a>
-      <button class="btn primary" type="submit">✓ Guardar registro</button>
+      <button class="btn primary" type="submit"{% if form.kind == 'traspasos' %} data-confirm="Se registrará el traspaso y un ingreso por el valor indicado. ¿Desea continuar?"{% endif %}>✓ {{ 'Guardar traspaso' if form.kind == 'traspasos' else 'Guardar registro' }}</button>
     </div>
   </form>
 </section>

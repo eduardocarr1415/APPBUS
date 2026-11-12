@@ -53,6 +53,9 @@ def test_protected_routes_and_login(environment):
     assert 'data-password-icon="show"' in page.text and 'data-password-icon="hide"' in page.text
     assert 'aria-label="Mostrar contraseña" aria-pressed="false"' in page.text
     assert '>Mostrar</button>' not in page.text
+    app_js=c.get('/static/app.js')
+    assert app_js.status_code==200 and 'Complete este campo.' in app_js.text
+    assert 'Ingrese un valor con el formato correcto.' in app_js.text
     token=csrf(c)
     res=c.post('/login',data={'_csrf':token,'username':'admin','password':'incorrect'},follow_redirects=False)
     assert res.status_code==401
@@ -355,8 +358,19 @@ def test_unit_ownership_transfer_updates_owner_and_keeps_rights_history(environm
     login(c)
     history_page=c.get('/socios?tab=traspasos')
     assert history_page.status_code==200 and 'Registrar traspaso' in history_page.text
+    transfer_form=c.get('/nuevo/traspasos')
+    assert transfer_form.status_code==200
+    assert 'Guardar traspaso' in transfer_form.text and 'Valor del traspaso (S/)' in transfer_form.text
+    invalid=post(c,'/nuevo/traspasos',{
+        'unit_id':str(unit),'new_socio_id':str(other),'transferred_at':date.today().isoformat(),
+        'amount':'0','method':'Efectivo','document_reference':'','notes':''
+    })
+    assert invalid.status_code==400 and 'mayor que cero' in invalid.text
+    assert db.one('SELECT COUNT(*) n FROM ownership_transfers')['n']==0
+    assert db.one("SELECT COUNT(*) n FROM incomes WHERE category='Traspaso'")['n']==0
     response=post(c,'/nuevo/traspasos',{
         'unit_id':str(unit),'new_socio_id':str(other),'transferred_at':date.today().isoformat(),
+        'amount':'1250.50','method':'Transferencia',
         'document_reference':'Contrato 2026-07','notes':'Venta acordada'
     })
     assert response.status_code==303
@@ -367,6 +381,10 @@ def test_unit_ownership_transfer_updates_owner_and_keeps_rights_history(environm
     assert transfer['includes_shares']==1 and transfer['includes_rights']==1
     assert transfer['document_reference']=='Contrato 2026-07'
     assert db.one("SELECT COUNT(*) n FROM audit WHERE entity='traspasos' AND record_id=?",(transfer['id'],))['n']==1
+    income=db.one("SELECT * FROM incomes WHERE category='Traspaso' AND socio_id=?",(other,))
+    assert income['amount_cents']==125050 and income['method']=='Transferencia'
+    assert income['day']==date.today().isoformat() and 'U-TRASPASO' in income['concept']
+    assert db.one("SELECT COUNT(*) n FROM audit WHERE entity='ingresos' AND record_id=?",(income['id'],))['n']==1
     history=c.get('/socios?tab=traspasos')
     assert 'Socio Uno' in history.text and 'Socio Dos' in history.text
     assert 'Bus, acciones y derechos' in history.text
@@ -386,12 +404,14 @@ def test_active_unit_rule_and_owner_change_require_transfer(environment):
     assert edit.status_code==400 and 'registre un traspaso' in edit.text
     transfer=post(c,'/nuevo/traspasos',{
         'unit_id':str(unit),'new_socio_id':str(other),'transferred_at':date.today().isoformat(),
+        'amount':'45','method':'Efectivo',
         'document_reference':'','notes':''
     })
     assert transfer.status_code==400 and 'ya tiene una unidad activa' in transfer.text
     assert db.one('SELECT socio_id FROM units WHERE id=?',(unit,))['socio_id']==sid
     assert db.one('SELECT active FROM socios WHERE id=?',(sid,))['active']==1
     assert db.one('SELECT COUNT(*) n FROM ownership_transfers')['n']==0
+    assert db.one("SELECT COUNT(*) n FROM incomes WHERE category='Traspaso'")['n']==0
 
 
 def test_user_role_change_revokes_existing_sessions(environment):
