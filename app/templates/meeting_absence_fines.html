@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}Multas por inasistencia{% endblock %}
+{% block content %}
+<div class="heading-row">
+  <div>
+    <a class="back-link" href="/reunion/{{ meeting.id }}">← Volver a la reunión</a>
+    <h1>Multas por inasistencia</h1>
+    <p>{{ meeting.type }} · {{ meeting.topic }} · {{ meeting.meeting_date }}</p>
+  </div>
+</div>
+
+{% if error %}<div class="notice danger" role="alert">{{ error }}</div>{% endif %}
+{% if generation_error %}<div class="notice info">{{ generation_error }}</div>{% endif %}
+
+{% if absences and not generation_error %}
+<section class="panel">
+  <div class="panel-heading">
+    <div><h2>Socios ausentes</h2><p>Ingrese el monto individual. Cada multa y su deuda quedarán guardadas en el sistema.</p></div>
+    <span class="pill orange">{{ absences|length }} pendientes</span>
+  </div>
+  <form action="/reunion/{{ meeting.id }}/multas-ausencias" method="post" class="form-stack">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Socio</th><th>Unidad</th><th>Monto de multa (S/)</th></tr></thead>
+        <tbody>
+          {% for socio in absences %}
+          <tr>
+            <td><b>{{ socio.name }}</b><input type="hidden" name="socio_ids" value="{{ socio.id }}"></td>
+            <td>{{ socio.unit_code or 'Sin unidad' }}</td>
+            <td><input aria-label="Multa para {{ socio.name }}" type="number" name="amount_{{ socio.id }}" value="{{ values.get(socio.id|string, '') }}" min="0.01" max="9999999999.99" step="0.01" inputmode="decimal" placeholder="0.00" required></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="form-actions">
+      <a class="btn secondary" href="/reunion/{{ meeting.id }}">Cancelar</a>
+      <button class="btn primary" type="submit" data-confirm="Se crearán {{ absences|length }} multas y sus deudas asociadas, con los montos indicados. Esta operación no se puede repetir para los mismos socios. ¿Continuar?">Generar multas</button>
+    </div>
+  </form>
+</section>
+{% elif not issued and not generation_error %}
+<section class="panel"><div class="notice info">No hay inasistencias registradas para esta reunión. Guarde la asistencia antes de generar multas.</div></section>
+{% endif %}
+
+{% if issued %}
+<section class="panel">
+  <h2>Multas ya generadas</h2>
+  <p>Estas multas ya están registradas junto con sus deudas; no se volverán a generar.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Socio</th><th>Monto</th><th>Estado</th></tr></thead>
+    <tbody>{% for socio in issued %}<tr><td>{{ socio.name }}</td><td>{{ socio.amount_cents|money }}</td><td><span class="pill orange">Registrada</span></td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

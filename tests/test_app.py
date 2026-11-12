@@ -490,6 +490,64 @@ def test_asistencia_save_and_no_duplication(environment):
     assert f'value="{other}" class="asistencia-check" aria-label="Asistió Socio Dos" checked' not in page.text
 
 
+def test_completed_meeting_creates_individual_absence_fines_once(environment):
+    app,db,c,sid,other,*_=environment
+    today=date.today().isoformat()
+    with db.connection() as con:
+        meeting_id=con.execute('''INSERT INTO meetings(type,topic,meeting_date,meeting_time,location)
+            VALUES(?,?,?,?,?)''',('Asamblea General','Asamblea extraordinaria',today,'10:00','Sala')).lastrowid
+        con.execute('INSERT INTO attendance(meeting_id,socio_id,status) VALUES(?,?,?)',
+                    (meeting_id,sid,'Faltó'))
+        con.execute('INSERT INTO attendance(meeting_id,socio_id,status) VALUES(?,?,?)',
+                    (meeting_id,other,'Justificó'))
+
+    login(c,'admin')
+    early=c.get(f'/reunion/{meeting_id}/multas-ausencias')
+    assert early.status_code==200 and 'Marque la reunión como realizada' in early.text
+    assert 'Generar multas' not in early.text
+
+    completed=post(c,f'/reunion/{meeting_id}/realizada')
+    assert completed.status_code==303
+    detail=c.get(f'/reunion/{meeting_id}')
+    assert 'Generar multas por inasistencia' in detail.text
+    attendance_page=c.get(f'/actas?tab=asistencia&meeting_id={meeting_id}')
+    assert 'Generar multas por inasistencia' in attendance_page.text
+    assert 'Guardar asistencia' not in attendance_page.text
+
+    fine_page=c.get(f'/reunion/{meeting_id}/multas-ausencias')
+    assert fine_page.status_code==200 and 'Socio Uno' in fine_page.text
+    assert 'Socio Dos' not in fine_page.text
+    assert f'name="amount_{sid}"' in fine_page.text
+    bad=post(c,f'/reunion/{meeting_id}/multas-ausencias',
+             {'socio_ids':[str(sid)],f'amount_{sid}':'0'})
+    assert bad.status_code==400 and 'mayor que cero' in bad.text
+    assert db.one('SELECT COUNT(*) n FROM meeting_absence_fines WHERE meeting_id=?',
+                  (meeting_id,))['n']==0
+
+    created=post(c,f'/reunion/{meeting_id}/multas-ausencias',
+                 {'socio_ids':[str(sid)],f'amount_{sid}':'25.50'})
+    assert created.status_code==303
+    link=db.one('SELECT * FROM meeting_absence_fines WHERE meeting_id=? AND socio_id=?',
+                (meeting_id,sid))
+    fine=db.one('SELECT * FROM fines WHERE id=?',(link['fine_id'],))
+    debt=db.one('SELECT * FROM debts WHERE fine_id=?',(fine['id'],))
+    assert fine['amount_cents']==2550 and fine['category']=='Inasistencia'
+    assert fine['reason']=='Inasistencia a la reunión: Asamblea extraordinaria'
+    assert debt['amount_cents']==2550 and debt['socio_id']==sid
+    assert db.one('SELECT COUNT(*) n FROM fines WHERE socio_id=?',(other,))['n']==0
+    assert db.one("SELECT COUNT(*) n FROM audit WHERE entity='multas' AND record_id=?",
+                  (fine['id'],))['n']==1
+
+    duplicate=post(c,f'/reunion/{meeting_id}/multas-ausencias',
+                   {'socio_ids':[str(sid)],f'amount_{sid}':'25.50'})
+    assert duplicate.status_code==400
+    assert db.one('SELECT COUNT(*) n FROM meeting_absence_fines WHERE meeting_id=?',
+                  (meeting_id,))['n']==1
+    assert c.post('/actas/asistencia',data={'_csrf':csrf(c,'/perfil'),
+        'meeting_id':str(meeting_id),'all_socio_ids':[str(sid),str(other)],
+        'asistio_ids':[str(sid)]}).status_code==409
+
+
 def test_asistencia_permissions_guard(environment):
     app, db, c, sid, other, aid, vid, sid_user = environment
     today = date.today().isoformat()
@@ -507,6 +565,7 @@ def test_asistencia_permissions_guard(environment):
 
     # Socio cannot POST to save attendance
     token = csrf(c, '/perfil')
+    assert c.get(f'/reunion/{mid}/multas-ausencias').status_code==403
     forbidden_resp = c.post('/actas/asistencia', data={
         '_csrf': token,
         'meeting_id': str(mid),
