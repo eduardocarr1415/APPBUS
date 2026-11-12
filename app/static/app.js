@@ -48,7 +48,35 @@ document.addEventListener('DOMContentLoaded',()=>{
  let pendingConfirmation=null;
  let approvedSubmitter=null;
  document.querySelectorAll('form').forEach(form=>{
-  form.addEventListener('invalid',()=>form.classList.add('validation-attempted'),true);
+  form.addEventListener('invalid',event=>{
+   form.classList.add('validation-attempted');
+   const field=event.target;
+   if(!(field instanceof HTMLInputElement||field instanceof HTMLSelectElement||field instanceof HTMLTextAreaElement))return;
+   const validity=field.validity;
+   let message='';
+   if(validity.valueMissing)message='Complete este campo.';
+   else if(validity.typeMismatch)message=field.type==='email'?'Ingrese un correo electrónico válido.':'Ingrese un valor con el formato correcto.';
+   else if(validity.patternMismatch)message=field.title||'El formato ingresado no es válido.';
+   else if(validity.tooShort)message=`Ingrese al menos ${field.minLength} caracteres.`;
+   else if(validity.tooLong)message=`Ingrese como máximo ${field.maxLength} caracteres.`;
+   else if(validity.rangeUnderflow)message=`Ingrese un valor igual o superior a ${field.min}.`;
+   else if(validity.rangeOverflow)message=`Ingrese un valor igual o inferior a ${field.max}.`;
+   else if(validity.stepMismatch)message='Ingrese un valor permitido para este campo.';
+   else if(validity.badInput)message='Ingrese un valor válido.';
+   if(message){
+    field.dataset.spanishValidation='true';
+    field.setCustomValidity(message);
+   }
+  },true);
+  const clearSpanishValidation=event=>{
+   const field=event.target;
+   if(field.dataset?.spanishValidation==='true'){
+    field.setCustomValidity('');
+    delete field.dataset.spanishValidation;
+   }
+  };
+  form.addEventListener('input',clearSpanishValidation);
+  form.addEventListener('change',clearSpanishValidation);
   form.addEventListener('submit',e=>{
    const btn=e.submitter;
    if(!btn?.dataset.confirm)return;

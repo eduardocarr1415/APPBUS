@@ -70,7 +70,7 @@ def spec(db,kind):
     roles=options(db,'SELECT id,name FROM roles ORDER BY id')
     S={
      'socios':('Registrar socio',[field('name','Nombres y apellidos','person_name'),field('cedula','Cédula','cedula'),field('phone','Celular','phone'),field('email','Correo electrónico','email'),field('joined','Fecha de ingreso','date'),field('notes','Observaciones','textarea',False)]),
-     'traspasos':('Registrar traspaso de unidad',[field('unit_id','Unidad que se traspasa','select',options=transfer_units),field('new_socio_id','Nuevo socio propietario','select',options=socios),field('transferred_at','Fecha del traspaso','date'),field('document_reference','Referencia del documento de compraventa',required=False),field('notes','Observaciones','textarea',False)]),
+     'traspasos':('Registrar traspaso de unidad',[field('unit_id','Unidad que se traspasa','select',options=transfer_units),field('new_socio_id','Nuevo socio propietario','select',options=socios),field('transferred_at','Fecha del traspaso','date'),field('amount','Valor del traspaso (S/)','money'),field('method','Método de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')]),field('document_reference','Referencia del documento de compraventa',required=False),field('notes','Observaciones','textarea',False)]),
      'vehiculos':('Registrar vehículo',[field('plate','Placa'),field('brand','Marca',required=False),field('model','Modelo',required=False),field('year','Año','number',False),field('status','Estado','select',options=[('Activo','Activo'),('Mantenimiento','Mantenimiento'),('Inactivo','Inactivo')])]),
      'unidades':('Registrar unidad',[field('code','Código de unidad'),field('socio_id','Socio responsable','select',False,[('', 'Sin asignar')]+socios),field('vehicle_id','Vehículo','select',False,[('', 'Sin vehículo')]+vehiculos),field('status','Estado','select',options=[('Activa','Activa'),('Mantenimiento','Mantenimiento'),('Inactiva','Inactiva')])]),
      'cambios':('Registrar cambio de vehículo',[field('unit_id','Unidad','select',options=unidades),field('new_vehicle_id','Nuevo vehículo','select',options=vehiculos),field('reason','Motivo del cambio'),field('amount','Valor del cambio (S/)','money',False),field('changed_at','Fecha de cambio','date'),field('method','Forma de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
@@ -138,9 +138,10 @@ def save(db, kind, data, uid, existing_id=None, ip=None):
     def nullable(name):return int(v[name]) if v.get(name) else None
     with db.connection() as con:
         period=Database.ensure_period(con,date.today())
-        if kind not in ('socios','traspasos','vehiculos','unidades','reuniones','actas','convocatorias','asistencia','usuarios','multas') and period['closed_at']:
+        if kind not in ('socios','vehiculos','unidades','reuniones','actas','convocatorias','asistencia','usuarios','multas') and period['closed_at']:
             raise ValueError('No se puede registrar: el periodo está cerrado.')
         financial_date={'cambios':'changed_at','ingresos':'day','egresos':'day','deudas':'issued','pagos':'day',
+                        'traspasos':'transferred_at',
                         }.get(kind)
         if financial_date and not (period['starts']<=v[financial_date]<=period['ends']):
             raise ValueError(f'La fecha debe estar dentro del periodo activo ({period["starts"]} a {period["ends"]}).')
@@ -177,6 +178,8 @@ def save(db, kind, data, uid, existing_id=None, ip=None):
                     raise ValueError('El socio ya tiene otra unidad activa.')
                 rid=con.execute('INSERT INTO units(code,socio_id,vehicle_id,status) VALUES(?,?,?,?)',(v['code'],nullable('socio_id'),nullable('vehicle_id'),v['status'])).lastrowid
         elif kind=='traspasos':
+            if not v['amount']:
+                raise FormValidationError('amount','El valor del traspaso debe ser mayor que cero.')
             unit=con.execute("""SELECT u.id,u.code,u.socio_id,u.status,s.name AS seller
                 FROM units u JOIN socios s ON s.id=u.socio_id WHERE u.id=?""",(int(v['unit_id']),)).fetchone()
             buyer=con.execute('SELECT id,name FROM socios WHERE id=? AND active=1',(int(v['new_socio_id']),)).fetchone()
@@ -197,8 +200,16 @@ def save(db, kind, data, uid, existing_id=None, ip=None):
                  v['document_reference'],v['notes'],uid)).lastrowid
             con.execute('UPDATE units SET socio_id=? WHERE id=?',(buyer['id'],unit['id']))
             con.execute('UPDATE socios SET active=0 WHERE id=?',(unit['socio_id'],))
+            income_id=con.execute('''INSERT INTO incomes
+                (period_id,socio_id,category,concept,amount_cents,method,day,created_by)
+                VALUES(?,?,?,?,?,?,?,?)''',
+                (period['id'],buyer['id'],'Traspaso',
+                 f"Traspaso de unidad {unit['code']}: {unit['seller']} a {buyer['name']}",
+                 v['amount'],v['method'],v['transferred_at'],uid)).lastrowid
             Database.audit(con,uid,'Traspasar','traspasos',rid,
                            f"Unidad {unit['code']}: {unit['seller']} → {buyer['name']} (bus, acciones y derechos)", ip=ip)
+            Database.audit(con,uid,'Registrar ingreso','ingresos',income_id,
+                           f"Ingreso de {v['amount']/100:.2f} S/ por traspaso de unidad {unit['code']} ({v['method']})",ip=ip)
             return rid
         elif kind=='cambios':
             prev=con.execute('SELECT vehicle_id FROM units WHERE id=?',(v['unit_id'],)).fetchone()
