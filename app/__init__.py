@@ -410,10 +410,7 @@ def create_app(db_path=None, testing=False):
         uid=current(request)['id']
         today=date.today().isoformat()
         with db.connection() as con:
-            try:
-                period=active_period_for_write(con)
-            except ValueError as exc:
-                raise HTTPException(400,str(exc)) from exc
+            period=active_period_for_write(con)
             mark=con.execute('''SELECT w.*,s.name AS socio_name FROM weekly_marks w
                 JOIN socios s ON s.id=w.socio_id WHERE w.id=?''',(mark_id,)).fetchone()
             if not mark:
@@ -768,7 +765,128 @@ def create_app(db_path=None, testing=False):
             FROM meeting_notifications WHERE meeting_id=?
         ''', (meeting_id,))
         return render(request,'meeting.html',active='actas',m=m,docs=docs,attendance=attendance,
-                      can_manage=has(request,'actas.editar'),notif_counts=notif_counts)
+                      can_manage=has(request,'actas.editar'),
+                      can_manage_fines=has(request,'multas.editar'),notif_counts=notif_counts)
+
+    def meeting_absence_fine_data(meeting_id):
+        meeting=db.one('SELECT * FROM meetings WHERE id=?',(meeting_id,))
+        if not meeting:
+            raise HTTPException(404,'Reunión no encontrada.')
+        absences=db.all('''SELECT s.id,s.name,
+            (SELECT u.code FROM units u WHERE u.socio_id=s.id AND u.status='Activa' ORDER BY u.id LIMIT 1) AS unit_code,
+            maf.fine_id,f.amount_cents
+            FROM attendance a JOIN socios s ON s.id=a.socio_id
+            LEFT JOIN meeting_absence_fines maf ON maf.meeting_id=a.meeting_id AND maf.socio_id=a.socio_id
+            LEFT JOIN fines f ON f.id=maf.fine_id
+            WHERE a.meeting_id=? AND a.status='Faltó' ORDER BY s.name''',(meeting_id,))
+        cycle=db.current_fine_cycle()
+        period=db.current_period()
+        today=date.today().isoformat()
+        generation_error=None
+        if meeting['status']!='Realizada':
+            generation_error='Marque la reunión como realizada antes de generar multas.'
+        elif period['closed_at']:
+            generation_error='El periodo actual está cerrado y no admite nuevas multas.'
+        elif not (period['starts']<=meeting['meeting_date']<=period['ends']):
+            generation_error='La fecha de la reunión no pertenece al periodo económico activo.'
+        elif cycle['closed_at'] or not (cycle['starts']<=meeting['meeting_date']<=today):
+            generation_error='La fecha de la reunión no pertenece al ciclo de multas vigente.'
+        pending=[dict(row) for row in absences if row['fine_id'] is None]
+        issued=[dict(row) for row in absences if row['fine_id'] is not None]
+        return meeting,pending,issued,generation_error
+
+    @app.get('/reunion/{meeting_id}/multas-ausencias')
+    def meeting_absence_fines_page(request:Request,meeting_id:int):
+        permitted(request,'multas.editar')
+        meeting,pending,issued,generation_error=meeting_absence_fine_data(meeting_id)
+        return render(request,'meeting_absence_fines.html',active='actas',meeting=meeting,
+                      absences=pending,issued=issued,generation_error=generation_error,
+                      values={},error=None)
+
+    @app.post('/reunion/{meeting_id}/multas-ausencias')
+    async def create_meeting_absence_fines(request:Request,meeting_id:int):
+        permitted(request,'multas.editar')
+        fields=await csrf_check(request)
+        submitted_ids=[]
+        amounts={}
+        values={}
+        for raw_id in fields.getlist('socio_ids'):
+            try:
+                socio_id=int(str(raw_id))
+            except ValueError as exc:
+                raise HTTPException(400,'La lista de socios ausentes no es válida.') from exc
+            submitted_ids.append(socio_id)
+            values[str(socio_id)]=str(fields.get(f'amount_{socio_id}','')).strip()
+        if len(submitted_ids)!=len(set(submitted_ids)):
+            raise HTTPException(400,'La lista de socios ausentes contiene duplicados.')
+        meeting,pending,issued,generation_error=meeting_absence_fine_data(meeting_id)
+        if generation_error:
+            raise HTTPException(400,generation_error)
+        expected_ids={row['id'] for row in pending}
+        if not expected_ids:
+            raise HTTPException(400,'No hay socios ausentes pendientes de generar multa.')
+        if set(submitted_ids)!=expected_ids:
+            raise HTTPException(400,'La lista de ausentes cambió. Recargue la página antes de continuar.')
+        try:
+            amounts={socio_id:money(values[str(socio_id)]) for socio_id in submitted_ids}
+            if any(amount<=0 for amount in amounts.values()):
+                raise ValueError('El monto de cada multa debe ser mayor que cero.')
+        except ValueError as exc:
+            return render(request,'meeting_absence_fines.html',status_code=400,active='actas',
+                          meeting=meeting,absences=pending,issued=issued,generation_error=None,
+                          values=values,error=str(exc))
+
+        uid=current(request)['id']
+        today=date.today()
+        with db.connection() as con:
+            con.execute('BEGIN IMMEDIATE')
+            meeting_row=con.execute('SELECT * FROM meetings WHERE id=?',(meeting_id,)).fetchone()
+            if not meeting_row or meeting_row['status']!='Realizada':
+                raise HTTPException(400,'La reunión debe estar marcada como realizada.')
+            period=Database.ensure_period(con,today)
+            if period['closed_at']:
+                raise HTTPException(400,'El periodo actual está cerrado y no admite nuevas multas.')
+            cycle=Database.ensure_fine_cycle(con,today)
+            meeting_day=meeting_row['meeting_date']
+            if not (period['starts']<=meeting_day<=period['ends']):
+                raise HTTPException(400,'La fecha de la reunión no pertenece al periodo económico activo.')
+            if cycle['closed_at'] or not (cycle['starts']<=meeting_day<=today.isoformat()):
+                raise HTTPException(400,'La fecha de la reunión no pertenece al ciclo de multas vigente.')
+            db_absences=con.execute('''SELECT a.socio_id,s.name
+                FROM attendance a JOIN socios s ON s.id=a.socio_id
+                WHERE a.meeting_id=? AND a.status='Faltó' ORDER BY s.name''',(meeting_id,)).fetchall()
+            already_fined={row['socio_id'] for row in con.execute(
+                'SELECT socio_id FROM meeting_absence_fines WHERE meeting_id=?',(meeting_id,)).fetchall()}
+            current_pending={row['socio_id'] for row in db_absences}-already_fined
+            if current_pending!=expected_ids:
+                raise HTTPException(409,'La asistencia o las multas de esta reunión cambiaron. Recargue la página.')
+            for absence in db_absences:
+                socio_id=absence['socio_id']
+                if socio_id not in current_pending:
+                    continue
+                amount=amounts[socio_id]
+                reason=f"Inasistencia a la reunión: {meeting_row['topic']}"
+                unit=con.execute("SELECT id FROM units WHERE socio_id=? AND status='Activa' ORDER BY id LIMIT 1",
+                                 (socio_id,)).fetchone()
+                fine_id=con.execute('''INSERT INTO fines
+                    (period_id,socio_id,unit_id,category,reason,occurred_at,amount_cents,created_by,fine_cycle_id)
+                    VALUES(?,?,?,?,?,?,?,?,?)''',
+                    (period['id'],socio_id,unit['id'] if unit else None,'Inasistencia',reason,
+                     meeting_day,amount,uid,cycle['id'])).lastrowid
+                con.execute('''INSERT INTO debts
+                    (period_id,socio_id,concept,amount_cents,issued,fine_id,created_by)
+                    VALUES(?,?,?,?,?,?,?)''',
+                    (period['id'],socio_id,'Multa: '+reason,amount,meeting_day,fine_id,uid))
+                con.execute('''INSERT INTO meeting_absence_fines(meeting_id,socio_id,fine_id)
+                    VALUES(?,?,?)''',(meeting_id,socio_id,fine_id))
+                Database.audit(con,uid,'Registrar multa por inasistencia','multas',fine_id,
+                               f"{absence['name']}: {amount/100:.2f} S/ por inasistencia a reunión #{meeting_id}",
+                               ip=client_ip(request))
+            Database.audit(con,uid,'Generar multas por inasistencia','reuniones',meeting_id,
+                           f"Se generaron {len(current_pending)} multas por inasistencia a '{meeting_row['topic']}'",
+                           ip=client_ip(request))
+        return redir(f'/reunion/{meeting_id}',
+                     f'Se generaron {len(expected_ids)} multas por inasistencia y sus deudas asociadas.')
 
     @app.post('/reunion/{meeting_id}/realizada')
     async def complete_meeting(request:Request,meeting_id:int):
@@ -824,6 +942,8 @@ def create_app(db_path=None, testing=False):
         meeting = db.one('SELECT * FROM meetings WHERE id=?', (meeting_id,))
         if not meeting:
             raise HTTPException(404, 'Reunión no encontrada.')
+        if meeting['status']=='Realizada':
+            raise HTTPException(409,'La asistencia está cerrada porque la reunión ya fue marcada como realizada.')
 
         all_socio_ids = [int(x) for x in f.getlist('all_socio_ids') if str(x).isdigit()]
         if not all_socio_ids:
@@ -837,6 +957,9 @@ def create_app(db_path=None, testing=False):
         checked_socio_ids = {int(x) for x in f.getlist('asistio_ids') if str(x).isdigit()}
 
         with db.connection() as con:
+            current_meeting=con.execute('SELECT status FROM meetings WHERE id=?',(meeting_id,)).fetchone()
+            if not current_meeting or current_meeting['status']=='Realizada':
+                raise HTTPException(409,'La asistencia está cerrada porque la reunión ya fue marcada como realizada.')
             for sid in all_socio_ids:
                 status = 'Asistió' if sid in checked_socio_ids else 'Faltó'
                 con.execute('''
@@ -1095,7 +1218,12 @@ def create_app(db_path=None, testing=False):
                 }
 
             extra.update(
-                can_manage_attendance=has(request, 'actas.editar'),
+                can_manage_attendance=(has(request, 'actas.editar')
+                                        and selected_meeting is not None
+                                        and selected_meeting['status']!='Realizada'),
+                can_generate_absence_fines=(has(request,'multas.editar')
+                                            and selected_meeting is not None
+                                            and selected_meeting['status']=='Realizada'),
                 meetings=meetings,
                 selected_meeting=selected_meeting,
                 socios_attendance=socios_attendance,

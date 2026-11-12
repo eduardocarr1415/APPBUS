@@ -140,6 +140,11 @@ CREATE TABLE IF NOT EXISTS fines (
  created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
  fine_cycle_id INTEGER REFERENCES fine_cycles(id)
 );
+CREATE TABLE IF NOT EXISTS meeting_absence_fines (
+ meeting_id INTEGER NOT NULL REFERENCES meetings(id), socio_id INTEGER NOT NULL REFERENCES socios(id),
+ fine_id INTEGER NOT NULL UNIQUE REFERENCES fines(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ PRIMARY KEY(meeting_id,socio_id)
+);
 CREATE TABLE IF NOT EXISTS weekly_marks (
  id INTEGER PRIMARY KEY, period_id INTEGER NOT NULL REFERENCES periods(id), socio_id INTEGER NOT NULL REFERENCES socios(id),
  week_start TEXT NOT NULL, concept TEXT NOT NULL, amount_cents INTEGER NOT NULL DEFAULT 0 CHECK(amount_cents>=0),
