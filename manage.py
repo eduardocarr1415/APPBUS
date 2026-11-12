@@ -12,23 +12,12 @@ DB = Database(ROOT/'instance'/'buses.sqlite3')
 
 def init():
     DB.init()
-    first=DB.one('SELECT id FROM users LIMIT 1')
-    if first:
-        print('La base de datos ya está inicializada y existen cuentas. No se cambió ninguna contraseña.')
-        return
-    password=secrets.token_urlsafe(18)
-    with DB.connection() as con:
-        role=con.execute("SELECT id FROM roles WHERE name='Administrador'").fetchone()['id']
-        con.execute('INSERT INTO users(username,full_name,email,password_hash,role_id) VALUES(?,?,?,?,?)',
-                    ('admin','Administrador principal',None,password_hash(password),role))
-        Database.audit(con,None,'Inicializar','sistema',None,'Se creó el primer administrador.')
-    print('\n'+'='*54)
-    print('ACCESO INICIAL - GUARDAR DE FORMA SEGURA')
+    DB.ensure_default_admin()
+    print('\n' + '=' * 54)
+    print('ACCESO INICIAL - ADMINISTRADOR PRINCIPAL')
     print('Usuario: admin')
-    print('Contraseña generada: '+password)
-    print('La contraseña NO queda guardada en un archivo de texto.')
-    print('CAMBIE LA CONTRASEÑA DESDE MI PERFIL.')
-    print('='*54+'\n')
+    print('Contraseña inicial predeterminada configurada mediante hash scrypt.')
+    print('=' * 54 + '\n')
 
 def demo():
     DB.init()
@@ -133,15 +122,12 @@ def backup():
 
 def reset_admin():
     DB.init()
-    admin = DB.one("SELECT id FROM users WHERE username='admin'")
-    if not admin:
-        print("El usuario admin no existe.")
-        return
-    password = 'Admin12345678!'
+    DB.ensure_default_admin()
     with DB.connection() as con:
-        con.execute("UPDATE users SET password_hash=?, session_version=session_version+1 WHERE username='admin'", (password_hash(password),))
-        con.execute("DELETE FROM sessions WHERE user_id=?", (admin['id'],))
-    print(f"\nContraseña de 'admin' restablecida a: {password}\n")
+        admin = con.execute("SELECT id FROM users WHERE username='admin'").fetchone()
+        if admin:
+            con.execute("DELETE FROM sessions WHERE user_id=?", (admin['id'],))
+    print("\nContraseña de 'admin' restablecida correctamente al hash predeterminado.\n")
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description='Administrar el sistema de buses')

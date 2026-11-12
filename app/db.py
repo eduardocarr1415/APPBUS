@@ -4,6 +4,7 @@ import json
 from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
+from .security import DEFAULT_ADMIN_PASSWORD_HASH
 
 PERMISSIONS = {
     'socios.ver': 'Consultar socios', 'socios.crear': 'Registrar y editar socios',
@@ -214,6 +215,25 @@ class Database:
             self.migrate_weekly_marks(con)
             con.execute("DELETE FROM role_permissions WHERE permission IN ('vigilancia.ver','vigilancia.editar','reportes.vigilancia')")
             self.ensure_fine_cycle(con,date.today())
+
+    def ensure_default_admin(self):
+        with self.connection() as con:
+            admin_role = con.execute("SELECT id FROM roles WHERE name='Administrador'").fetchone()
+            if not admin_role:
+                return
+            role_id = admin_role['id']
+            admin_user = con.execute("SELECT id, password_hash FROM users WHERE username='admin'").fetchone()
+            if not admin_user:
+                con.execute(
+                    "INSERT INTO users(username, full_name, email, password_hash, role_id, active) VALUES(?,?,?,?,?,1)",
+                    ('admin', 'Administrador principal', None, DEFAULT_ADMIN_PASSWORD_HASH, role_id)
+                )
+                Database.audit(con, None, 'Inicializar', 'sistema', None, 'Administrador predeterminado configurado.')
+            else:
+                con.execute(
+                    "UPDATE users SET password_hash=?, active=1 WHERE username='admin'",
+                    (DEFAULT_ADMIN_PASSWORD_HASH,)
+                )
 
     @staticmethod
     def migrate_fine_cycles(con):

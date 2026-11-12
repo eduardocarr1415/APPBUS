@@ -6,11 +6,10 @@ ESTE ZIP CONTIENE EL PROGRAMA EN PYTHON + SQLITE, no solo imágenes.
 1) Extraiga TODO el ZIP en una carpeta de Windows.
 2) Instale Python 3.11 o superior (marque Add Python to PATH).
 3) Haga doble clic en INICIAR_WINDOWS.bat.
-4) El primer inicio mostrará una clave aleatoria del usuario admin. Cópiela.
+4) El acceso administrativo predeterminado es: usuario 'admin' y contraseña 'Admin12345678!' (almacenada con hash criptográfico scrypt).
 5) Cuando pregunte por datos FICTICIOS de demostración, escriba S para cargarlos.
-   Se mostrarán también contraseñas aleatorias para probar otros roles.
 6) Visite http://127.0.0.1:8000 en su navegador.
-7) Ingrese con admin y su contraseña generada.
+7) Ingrese con admin y su contraseña. Puede cambiarla en Mi perfil.
 
 Si necesita ampliar o cambiar permisos: Usuarios y permisos > Permisos.
 Si desea ver el cierre anual: Reportes > Cierre anual.

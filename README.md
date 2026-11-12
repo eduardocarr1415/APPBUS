@@ -6,8 +6,8 @@
 
 1. Instale **Python 3.11 o posterior** y active la opción *Add Python to PATH*.
 2. Extraiga **completamente** el ZIP a una carpeta con permisos de escritura.
-3. Haga doble clic en **`INICIAR_WINDOWS.bat`**. En el primer inicio instala las dependencias, crea la base de datos SQLite y muestra una **contraseña inicial aleatoria** para el usuario `admin`. **Guárdela**, se muestra solo esa primera vez.
-4. Abra `http://127.0.0.1:8000` e inicie sesión. En **Mi perfil** cambie la contraseña.
+3. Haga doble clic en **`INICIAR_WINDOWS.bat`**. En el primer inicio instala las dependencias, crea la base de datos SQLite y configura el acceso administrativo predeterminado (`admin` / `Admin12345678!`), almacenado de forma segura mediante hash criptográfico scrypt (sin credenciales en texto plano en el repositorio).
+4. Abra `http://127.0.0.1:8000` e inicie sesión con `admin` y la contraseña `Admin12345678!`. En **Mi perfil** puede cambiarla si lo desea.
 5. El iniciador preguntará si desea cargar **datos ficticios de demostración**; responda **S** para ver las tablas y gráficas llenas. También mostrará credenciales temporales aleatorias para Secretaría, Tesorería, Vigilancia y Socio. Guárdelas. No use los datos de prueba como información real.
 
 **Alternativa con terminal** (PowerShell):

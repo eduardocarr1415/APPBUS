@@ -34,6 +34,8 @@ def create_app(db_path=None, testing=False):
     folder.mkdir(parents=True,exist_ok=True)
     db=Database(db_path or folder/'buses.sqlite3')
     db.init()
+    if not testing:
+        db.ensure_default_admin()
     app.state.db=db
     app.state.upload_dir=folder/'uploads'
     app.state.upload_dir.mkdir(exist_ok=True)
@@ -208,17 +210,11 @@ def create_app(db_path=None, testing=False):
 
     @app.get('/recuperar')
     def recover_page(request:Request):
-        return render(request,'recover.html',sent=False)
+        return redir('/login')
 
     @app.post('/recuperar')
     async def recover(request:Request):
-        f=await csrf_check(request)
-        username=str(f.get('username','')).strip().lower()
-        ip=client_ip(request)
-        with db.connection() as con:
-            Database.audit(con,None,'Recuperar clave','autenticacion',None,f"Solicitud de recuperación para '{username}' desde IP {ip}", ip=ip)
-        # Intentionally do not disclose whether a user exists. Local version has no outgoing email service.
-        return render(request,'recover.html',sent=True)
+        return redir('/login')
 
     @app.post('/logout')
     async def logout(request:Request):

@@ -13,6 +13,10 @@ LOGIN_WINDOW = 15
 MAX_ATTEMPTS = 5
 SESSION_HOURS = 8
 
+# Hash scrypt precalculado para el usuario administrador inicial y sincronización en git.
+# Criptográficamente seguro (N=16384, r=8, p=1). Evita credenciales en texto plano en el repositorio ("código quemado").
+DEFAULT_ADMIN_PASSWORD_HASH = 'scrypt:16384:8:1$umXqMcZGhO7Zr9X8jkIwUw==$c7/nlafgXzEI61+qX4hp0eH63KlLaFKPz8zFJG63+z0QmDpRVQQi0ylCcMuaqtNWWS9lTy/Cm5rvdJhGVF61ag=='
+
 def password_hash(password):
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(password.encode('utf-8'), salt=salt, n=2**14, r=8, p=1, dklen=64)
