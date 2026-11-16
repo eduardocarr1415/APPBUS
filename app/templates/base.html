@@ -9,18 +9,18 @@
   <link rel="stylesheet" href="/static/style.css?v=2026.10" defer>
   <style id="dynamic-system-theme">
     :root {
-      {% if settings.primary_color %}--primary-color: {{ settings.primary_color }};{% endif %}
-      {% if settings.sidebar_color %}--sidebar-bg: {{ settings.sidebar_color }};{% endif %}
-      {% if settings.accent_color %}--accent-color: {{ settings.accent_color }};{% endif %}
-      {% if settings.page_bg_color %}--page-bg: {{ settings.page_bg_color }};{% endif %}
-      {% if settings.card_bg_color %}--card-bg: {{ settings.card_bg_color }};{% endif %}
-      {% if settings.sidebar_text_color %}--sidebar-text: {{ settings.sidebar_text_color }};{% endif %}
-      {% if settings.border_radius %}--app-radius: {{ settings.border_radius }};{% endif %}
-      {% if settings.font_family %}--app-font: {{ settings.font_family|safe }};{% endif %}
-      {% if settings.font_size %}--base-font-size: {{ settings.font_size }};{% endif %}
+      {% if settings.primary_color %}--primary-color: {{ settings.primary_color|css_value }};{% endif %}
+      {% if settings.sidebar_color %}--sidebar-bg: {{ settings.sidebar_color|css_value }};{% endif %}
+      {% if settings.accent_color %}--accent-color: {{ settings.accent_color|css_value }};{% endif %}
+      {% if settings.page_bg_color %}--page-bg: {{ settings.page_bg_color|css_value }};{% endif %}
+      {% if settings.card_bg_color %}--card-bg: {{ settings.card_bg_color|css_value }};{% endif %}
+      {% if settings.sidebar_text_color %}--sidebar-text: {{ settings.sidebar_text_color|css_value }};{% endif %}
+      {% if settings.border_radius %}--app-radius: {{ settings.border_radius|css_value }};{% endif %}
+      {% if settings.font_family %}--app-font: {{ settings.font_family|css_value }};{% endif %}
+      {% if settings.font_size %}--base-font-size: {{ settings.font_size|css_value }};{% endif %}
     }
   </style>
-  <script src="/static/app.js?v=2026.9" defer></script>
+  <script src="/static/app.js?v=2026.11" defer></script>
 </head>
 <body class="{% if not user %}auth-body{% endif %}" data-tabs-style="{{ settings.tabs_style|default('capsule') }}">
 {% if user %}

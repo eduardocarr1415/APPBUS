@@ -17,7 +17,7 @@ from fastapi.templating import Jinja2Templates
 from .db import Database, PERMISSIONS
 from .security import (password_hash,password_ok,password_valid,utcnow,nowstr,token_hash,make_session,
                        locked,register_failure,reset_failures,safe_text,valid_email,valid_username,
-                       money,valid_date)
+                       money,valid_date,DEFAULT_ADMIN_PASSWORD_HASH)
 from .views import NAV,TABS,TITLES,SUBTITLES,modules
 from .forms import PERM_CREATE, spec, save, field_errors_for
 from .reports import fmt, build_rows, as_csv, as_pdf, REPORT_TYPES
@@ -25,6 +25,14 @@ from .reports import fmt, build_rows, as_csv, as_pdf, REPORT_TYPES
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent/'templates'))
 TEMPLATES.env.filters['money'] = fmt
+
+def css_value(value):
+    """Value for a CSS custom property inside <style>: keep quotes, drop anything that could
+    close the declaration, the rule or the <style> element (stored settings predating validation)."""
+    from markupsafe import Markup
+    return Markup(re.sub(r'[<>{}();\\\n\r]', '', str(value or ''))[:120])
+
+TEMPLATES.env.filters['css_value'] = css_value
 
 ALLOWED_UPLOADS = {'.pdf':'application/pdf','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg'}
 
@@ -109,11 +117,24 @@ def create_app(db_path=None, testing=False):
                       can_create=can_create,today=date.today().isoformat(),
                       existing=bool(existing),error=error)
 
+    trust_proxy = os.environ.get('BUS_TRUST_PROXY', '0') == '1'
+
     def client_ip(request: Request) -> str:
-        xff = request.headers.get('x-forwarded-for')
-        if xff:
-            return xff.split(',')[0].strip()
+        # X-Forwarded-For is client-controlled: honouring it without a trusted reverse proxy lets
+        # anyone rotate fake IPs to bypass the login lockout and falsify the audit trail.
+        if trust_proxy:
+            xff = request.headers.get('x-forwarded-for')
+            if xff:
+                candidate = xff.split(',')[-1].strip()[:45]
+                if re.fullmatch(r'[0-9A-Fa-f:.]{2,45}', candidate):
+                    return candidate
         return request.client.host if (request.client and request.client.host) else '127.0.0.1'
+
+    def script_json(data) -> str:
+        # Safe for embedding inside <script type="application/json">: a value such as
+        # "</script><script>…" in a plate or unit code can no longer break out of the tag.
+        return (json.dumps(data, ensure_ascii=False)
+                .replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026'))
 
     @app.middleware('http')
     async def security_middleware(request, call_next):
@@ -157,7 +178,9 @@ def create_app(db_path=None, testing=False):
         response.headers['X-Frame-Options']='DENY'
         response.headers['Referrer-Policy']='same-origin'
         response.headers['Permissions-Policy']='camera=(), microphone=(), geolocation=()'
-        response.headers['Content-Security-Policy']="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+        if os.environ.get('BUS_HTTPS','0')=='1':
+            response.headers['Strict-Transport-Security']='max-age=31536000'
+        response.headers.setdefault('Content-Security-Policy',"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
         if not request.url.path.startswith('/static/'):
             response.headers['Cache-Control']='no-store'
         return response
@@ -198,11 +221,14 @@ def create_app(db_path=None, testing=False):
                 Database.audit(con,None,'Intento fallido','autenticacion',None,f"Intento de acceso fallido con usuario inválido '{username}' desde IP {ip}", ip=ip)
                 return render(request,'login.html',status_code=401,error='Usuario o contraseña incorrectos.')
             u=con.execute('SELECT * FROM users WHERE username=?',(username,)).fetchone()
-            if not u or not u['active'] or not password_ok(pwd,u['password_hash']):
+            # Always run one scrypt verification so response time does not reveal which usernames exist.
+            password_matches=password_ok(pwd,u['password_hash'] if u else DEFAULT_ADMIN_PASSWORD_HASH)
+            if not u or not u['active'] or not password_matches:
                 register_failure(con,username,ip)
                 Database.audit(con,u['id'] if u else None,'Intento fallido','autenticacion',None,f"Intento de acceso fallido con usuario '{username}' desde IP {ip}", ip=ip)
                 return render(request,'login.html',status_code=401,error='Usuario o contraseña incorrectos.')
             reset_failures(con,username,ip)
+            Database.purge_expired(con,nowstr())
             con.execute('DELETE FROM sessions WHERE token_hash=?',(request.state.sid_hash,))
             token,csrf=make_session(con,u['id'],u['session_version'])
             Database.audit(con,u['id'],'Inicio de sesión','autenticacion',u['id'],f"Inicio de sesión exitoso de '{u['username']}' ({u['full_name']}) desde IP {ip}", ip=ip)
@@ -311,8 +337,11 @@ def create_app(db_path=None, testing=False):
 
     @app.get('/api/lookup-socio-unit')
     def api_lookup_socio_unit(request: Request, q: str = ''):
-        permitted(request)
-        q = q.strip()
+        # Returns cédula and phone of every partner: never available to the Socio role.
+        permitted(request, 'socios.ver')
+        if current(request)['role'] == 'Socio':
+            raise HTTPException(403, 'No tiene autorización para acceder a este apartado.')
+        q = q.strip()[:80]
         if not q:
             return JSONResponse([])
         rows = db.all("""
@@ -435,8 +464,8 @@ def create_app(db_path=None, testing=False):
             if updated!=1:
                 raise HTTPException(409,'La marcación cambió mientras se registraba el pago. Recargue la lista.')
             Database.audit(con,uid,'Pagar marcación semanal','weekly_marks',mark_id,
-                f"{mark['socio_name']}: abono de {amount/100:.2f} S/; acumulado "
-                f"{total_paid/100:.2f} S/ de {mark['amount_cents']/100:.2f} S/ ({method})")
+                f"{mark['socio_name']}: abono de ${amount/100:.2f}; acumulado "
+                f"${total_paid/100:.2f} de ${mark['amount_cents']/100:.2f} ({method})")
         return redir(f'/finanzas?tab=marcaciones&desde={mark["week_start"]}&hasta={mark["week_start"]}&lista=1',
                      'Abono registrado en Finanzas; la marcación sigue pendiente.' if state=='Pendiente'
                      else 'Aporte completado; la marcación figura como pagada.')
@@ -453,7 +482,7 @@ def create_app(db_path=None, testing=False):
                  'changed_at':date.today().isoformat(),'transferred_at':date.today().isoformat()}
         socios_l, units_l = get_socio_unit_data()
         return render(request,'form.html',active='',form=s,values=initial,error=None,errors={},cancel=parent(kind),editing=False,
-                      socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
+                      socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=script_json(socios_l),unit_lookup_json=script_json(units_l))
 
     @app.post('/nuevo/{kind}')
     async def new_save(request:Request,kind:str):
@@ -467,7 +496,7 @@ def create_app(db_path=None, testing=False):
             socios_l, units_l = get_socio_unit_data()
             return render(request,'form.html',status_code=400,active='',form=spec(db,kind),values=values,
                           error=msg,errors=field_errors_for(exc),cancel=parent(kind),editing=False,
-                          socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
+                          socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=script_json(socios_l),unit_lookup_json=script_json(units_l))
         message='Traspaso registrado; propietario e historial actualizados.' if kind=='traspasos' else 'Registro guardado correctamente.'
         return redir(parent(kind),message)
 
@@ -486,7 +515,7 @@ def create_app(db_path=None, testing=False):
         if not item:raise HTTPException(404,'Registro no encontrado.')
         socios_l, units_l = get_socio_unit_data()
         return render(request,'form.html',active='',form=spec(db,kind),values={f:str(item[column] or '') for f,column in EDIT_KEYS[kind].items()},error=None,errors={},cancel=parent(kind),editing=True,record_id=record_id,
-                      socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
+                      socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=script_json(socios_l),unit_lookup_json=script_json(units_l))
 
     @app.post('/editar/{kind}/{record_id}')
     async def edit_save(request:Request,kind:str,record_id:int):
@@ -499,7 +528,7 @@ def create_app(db_path=None, testing=False):
             socios_l, units_l = get_socio_unit_data()
             return render(request,'form.html',active='',form=spec(db,kind),values=v,error=msg,
                           errors=field_errors_for(exc),cancel=parent(kind),editing=True,record_id=record_id,status_code=400,
-                          socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=json.dumps(socios_l),unit_lookup_json=json.dumps(units_l))
+                          socio_lookup=socios_l,unit_lookup=units_l,socio_lookup_json=script_json(socios_l),unit_lookup_json=script_json(units_l))
         return redir(parent(kind),'Cambios guardados.')
 
     @app.post('/permisos/{role_id}')
@@ -552,18 +581,24 @@ def create_app(db_path=None, testing=False):
             Database.audit(con,current(request)['id'],'Restablecer clave','usuarios',user_id,f"Clave temporal generada para el usuario '{u['username']}'", ip=ip)
         return render(request,'one_time_secret.html',active='usuarios',account=u['username'],secret=new_secret)
 
-    @app.get('/multas/{fine_id}/pagar')
-    def pay_fine_page(request:Request,fine_id:int):
-        if not (has(request,'multas.editar') or has(request,'finanzas.editar')):
-            raise HTTPException(403,'No tiene permisos para cobrar multas.')
+    def render_pay_fine(request,fine_id,error=None,values=None,status_code=200):
         fine=db.one('SELECT f.*,s.name AS socio_name,s.cedula AS socio_cedula,u.code AS unit_code FROM fines f JOIN socios s ON s.id=f.socio_id LEFT JOIN units u ON u.id=f.unit_id WHERE f.id=?',(fine_id,))
         if not fine: raise HTTPException(404,'Multa no encontrada.')
         if fine['status']!='Pendiente':
             return redir('/multas',f'La multa #{fine_id} ya se encuentra en estado {fine["status"]}.')
         debt=db.one('SELECT * FROM debts WHERE fine_id=?',(fine_id,))
         pending=(debt['amount_cents']-debt['paid_cents']) if debt else fine['amount_cents']
-        return render(request,'pay_fine.html',active='multas',fine=fine,
-                      amount_fmt=fmt(pending),today=date.today().isoformat())
+        today=date.today().isoformat()
+        period=db.current_period()
+        return render(request,'pay_fine.html',status_code=status_code,active='multas',fine=fine,
+                      amount_fmt=fmt(pending),today=today,min_day=period['starts'],
+                      max_day=min(today,period['ends']),error=error,values=values or {})
+
+    @app.get('/multas/{fine_id}/pagar')
+    def pay_fine_page(request:Request,fine_id:int):
+        if not (has(request,'multas.editar') or has(request,'finanzas.editar')):
+            raise HTTPException(403,'No tiene permisos para cobrar multas.')
+        return render_pay_fine(request,fine_id)
 
     @app.post('/multas/{fine_id}/pagar')
     async def pay_fine_action(request:Request,fine_id:int):
@@ -573,12 +608,31 @@ def create_app(db_path=None, testing=False):
         method=str(f.get('method','Efectivo')).strip()
         if method not in ('Efectivo','Transferencia','Depósito'):
             method='Efectivo'
-        pay_day=str(f.get('day',date.today().isoformat())).strip() or date.today().isoformat()
-        notes=str(f.get('notes','')).strip()
+        raw_day=str(f.get('day','')).strip() or date.today().isoformat()
+        values={'method':method,'day':raw_day,'notes':str(f.get('notes',''))[:250]}
+        # Validation problems re-show the payment form with a clear notice instead of an error page.
+        problem=None
+        try:
+            pay_day=valid_date(raw_day).isoformat()
+            notes=safe_text(f.get('notes',''),'Observaciones',250,required=False)
+        except ValueError as exc:
+            problem=str(exc)
+        else:
+            period_now=db.current_period()
+            if pay_day>date.today().isoformat():
+                problem=('No se puede registrar un pago con fecha futura. '
+                         f'Seleccione la fecha de hoy ({date.today().strftime("%d/%m/%Y")}) o una anterior.')
+            elif not (period_now['starts']<=pay_day<=period_now['ends']):
+                problem=('La fecha de pago debe estar dentro del periodo activo '
+                         f'({period_now["starts"]} a {period_now["ends"]}).')
+        if problem:
+            return render_pay_fine(request,fine_id,error=problem,values=values,status_code=400)
         ip=client_ip(request)
         uid=current(request)['id']
         with db.connection() as con:
             period=active_period_for_write(con)
+            if not (period['starts']<=pay_day<=period['ends']):
+                raise HTTPException(400,f'La fecha de pago debe estar dentro del periodo activo ({period["starts"]} a {period["ends"]}).')
             fine=con.execute('SELECT * FROM fines WHERE id=?',(fine_id,)).fetchone()
             if not fine or fine['status']!='Pendiente':
                 raise HTTPException(400,'Solo se pueden cobrar multas en estado Pendiente.')
@@ -603,9 +657,9 @@ def create_app(db_path=None, testing=False):
             con.execute("UPDATE fines SET status='Pagada' WHERE id=?",(fine_id,))
             note_str=f" ({notes})" if notes else ""
             Database.audit(con,uid,'Pagar multa','multas',fine_id,
-                           f"Cobro y pago de Multa #{fine_id} por {pending/100:.2f} S/ ({method}){note_str}", ip=ip)
+                           f"Cobro y pago de Multa #{fine_id} por ${pending/100:.2f} ({method}){note_str}", ip=ip)
             Database.audit(con,uid,'Registrar','pagos',pay_id,
-                           f"Abono de {pending/100:.2f} S/ a deuda #{debt['id']} por multa #{fine_id} ({method}){note_str}", ip=ip)
+                           f"Abono de ${pending/100:.2f} a deuda #{debt['id']} por multa #{fine_id} ({method}){note_str}", ip=ip)
         return redir('/multas?tab=pagadas',f'Multa #{fine_id} pagada y registrada exitosamente.')
 
     @app.post('/multas/{fine_id}/anular')
@@ -661,7 +715,7 @@ def create_app(db_path=None, testing=False):
         if not document:raise HTTPException(404,'Documento no encontrado.')
         file=app.state.upload_dir/document['safe_path']
         if not file.is_file():raise HTTPException(404,'Archivo no disponible.')
-        return FileResponse(str(file),filename=document['filename'],media_type=ALLOWED_UPLOADS.get(file.suffix,'.pdf'))
+        return FileResponse(str(file),filename=document['filename'],media_type=ALLOWED_UPLOADS.get(file.suffix.lower(),'application/octet-stream'))
 
     @app.get('/reporte/{kind}.{format}')
     def download_report(request:Request,kind:str,format:str,period_id:int=0,
@@ -880,7 +934,7 @@ def create_app(db_path=None, testing=False):
                 con.execute('''INSERT INTO meeting_absence_fines(meeting_id,socio_id,fine_id)
                     VALUES(?,?,?)''',(meeting_id,socio_id,fine_id))
                 Database.audit(con,uid,'Registrar multa por inasistencia','multas',fine_id,
-                               f"{absence['name']}: {amount/100:.2f} S/ por inasistencia a reunión #{meeting_id}",
+                               f"{absence['name']}: ${amount/100:.2f} por inasistencia a reunión #{meeting_id}",
                                ip=client_ip(request))
             Database.audit(con,uid,'Generar multas por inasistencia','reuniones',meeting_id,
                            f"Se generaron {len(current_pending)} multas por inasistencia a '{meeting_row['topic']}'",
@@ -1011,8 +1065,11 @@ def create_app(db_path=None, testing=False):
                 WHERE s.active=1 OR mn.meeting_id IS NOT NULL
             ''', (meeting_id,))
             all_socio_ids = [s['id'] for s in db_socios]
+        # Only real partners can be summoned: unknown IDs used to raise a FOREIGN KEY error (HTTP 500).
+        known_ids = {row['id'] for row in db.all('SELECT id FROM socios')}
+        all_socio_ids = list(dict.fromkeys(sid for sid in all_socio_ids if sid in known_ids))
 
-        notified_ids = {int(x) for x in f.getlist('notified_ids') if str(x).isdigit()}
+        notified_ids = {int(x) for x in f.getlist('notified_ids') if str(x).isdigit()} & set(all_socio_ids)
 
         with db.connection() as con:
             con.execute("UPDATE meetings SET notice=?, notice_sent_at=COALESCE(notice_sent_at, CURRENT_TIMESTAMP) WHERE id=?",
@@ -1045,15 +1102,42 @@ def create_app(db_path=None, testing=False):
 
         return redir(f'/actas?tab=convocatorias&meeting_id={meeting_id}', 'Convocatoria y notificaciones guardadas correctamente.')
 
+    BRANDING_TYPES = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                      '.svg': 'image/svg+xml', '.webp': 'image/webp', '.ico': 'image/x-icon'}
+
+    def branding_content_ok(ext, content):
+        if ext == '.png': return content.startswith(b'\x89PNG\r\n\x1a\n')
+        if ext in ('.jpg', '.jpeg'): return content.startswith(b'\xff\xd8\xff')
+        if ext == '.webp': return content[:4] == b'RIFF' and content[8:12] == b'WEBP'
+        if ext == '.ico': return content[:4] == b'\x00\x00\x01\x00'
+        if ext == '.svg':
+            head = content[:4096].lstrip().lower()
+            return head.startswith((b'<svg', b'<?xml')) and b'<svg' in content[:65536].lower()
+        return False
+
+    def safe_asset_url(value, fallback):
+        # Only local assets (bundled /static/ or uploaded /branding/) are accepted, never
+        # javascript:, data: or external URLs that the CSP would block anyway.
+        value = str(value or '').strip()[:250]
+        if re.fullmatch(r'/(static|branding)/[A-Za-z0-9_\-./]+', value) and '..' not in value:
+            return value
+        return fallback
+
+    FONT_CHOICES = (Database.DEFAULT_SETTINGS['font_family'], 'Inter, system-ui, sans-serif',
+                    "'Segoe UI', Roboto, Arial, sans-serif", "'Plus Jakarta Sans', system-ui, sans-serif",
+                    'system-ui, -apple-system, sans-serif')
+
     async def save_uploaded_branding_file(file_obj, prefix: str) -> str | None:
         if file_obj and hasattr(file_obj, 'filename') and file_obj.filename:
             fname = file_obj.filename.strip()
             ext = Path(fname).suffix.lower()
             if ext not in ('.png', '.jpg', '.jpeg', '.svg', '.webp', '.ico'):
                 raise HTTPException(400, f'Formato no permitido para {prefix}. Solo se admiten PNG, JPG, JPEG, SVG, WEBP o ICO.')
-            content = await file_obj.read()
+            content = await file_obj.read(4 * 1024 * 1024 + 1)
             if len(content) > 4 * 1024 * 1024:
                 raise HTTPException(400, f'El archivo de imagen {prefix} no puede superar 4 MB.')
+            if not branding_content_ok(ext, content):
+                raise HTTPException(400, f'El contenido del archivo {prefix} no coincide con su extensión.')
             branding_dir = app.state.upload_dir / 'branding'
             branding_dir.mkdir(parents=True, exist_ok=True)
             safe_name = f"{prefix}_{secrets.token_hex(4)}{ext}"
@@ -1067,10 +1151,15 @@ def create_app(db_path=None, testing=False):
         safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '', filename)
         target = (app.state.upload_dir / 'branding' / safe).resolve()
         base_dir = (app.state.upload_dir / 'branding').resolve()
-        if not str(target).startswith(str(base_dir)) or not target.exists():
+        if target.parent != base_dir or not target.is_file():
             raise HTTPException(404, 'Imagen no encontrada')
-        media = 'image/svg+xml' if safe.endswith('.svg') else ('image/png' if safe.endswith('.png') else ('image/x-icon' if safe.endswith('.ico') else 'image/jpeg'))
-        return FileResponse(target, media_type=media)
+        media = BRANDING_TYPES.get(target.suffix.lower())
+        if not media:
+            raise HTTPException(404, 'Imagen no encontrada')
+        response = FileResponse(target, media_type=media)
+        # An SVG opened directly could run embedded scripts on this origin; sandbox it.
+        response.headers['Content-Security-Policy'] = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
+        return response
 
     @app.get('/configuracion')
     def configuracion_page(request:Request):
@@ -1095,6 +1184,19 @@ def create_app(db_path=None, testing=False):
         up_login = await save_uploaded_branding_file(f.get('login_banner_file'), 'login')
         up_fav = await save_uploaded_branding_file(f.get('favicon_file'), 'favicon')
 
+        def pick_color(key):
+            value = str(f.get(key, '')).strip()
+            if re.fullmatch(r'#[0-9A-Fa-f]{6}', value):
+                return value.lower()
+            return curr_s.get(key) or Database.DEFAULT_SETTINGS[key]
+
+        def pick_choice(key, allowed):
+            value = str(f.get(key, '')).strip()
+            if value in allowed:
+                return value
+            previous = curr_s.get(key)
+            return previous if previous in allowed else Database.DEFAULT_SETTINGS[key]
+
         new_s = {
             # Identidad y textos
             'company_name': str(f.get('company_name', '')).strip()[:100] or curr_s.get('company_name', 'Compañía de Transportes Guaytacama'),
@@ -1104,30 +1206,30 @@ def create_app(db_path=None, testing=False):
             'login_subtitle': str(f.get('login_subtitle', '')).strip()[:180] or curr_s.get('login_subtitle', 'Accede a la plataforma de gestión de la compañía.'),
 
             # Logos e imágenes
-            'header_logo_url': up_logo or str(f.get('header_logo_url', '')).strip()[:250] or curr_s.get('header_logo_url', '/static/bus-icon.svg'),
-            'sidebar_banner_url': up_banner or str(f.get('sidebar_banner_url', '')).strip()[:250] or curr_s.get('sidebar_banner_url', '/static/bus-guaytacama.svg'),
-            'login_banner_url': up_login or str(f.get('login_banner_url', '')).strip()[:250] or curr_s.get('login_banner_url', '/static/bus-landscape.svg'),
-            'favicon_url': up_fav or str(f.get('favicon_url', '')).strip()[:250] or curr_s.get('favicon_url', '/static/favicon.svg'),
+            'header_logo_url': up_logo or safe_asset_url(f.get('header_logo_url'), curr_s.get('header_logo_url', '/static/bus-icon.svg')),
+            'sidebar_banner_url': up_banner or safe_asset_url(f.get('sidebar_banner_url'), curr_s.get('sidebar_banner_url', '/static/bus-guaytacama.svg')),
+            'login_banner_url': up_login or safe_asset_url(f.get('login_banner_url'), curr_s.get('login_banner_url', '/static/bus-landscape.svg')),
+            'favicon_url': up_fav or safe_asset_url(f.get('favicon_url'), curr_s.get('favicon_url', '/static/favicon.svg')),
 
-            # Colores y diseño
-            'primary_color': str(f.get('primary_color', '#1d4ed8')).strip()[:20],
-            'sidebar_color': str(f.get('sidebar_color', '#0f172a')).strip()[:20],
-            'accent_color': str(f.get('accent_color', '#f59e0b')).strip()[:20],
-            'page_bg_color': str(f.get('page_bg_color', '#f8fafc')).strip()[:20],
-            'card_bg_color': str(f.get('card_bg_color', '#ffffff')).strip()[:20],
-            'sidebar_text_color': str(f.get('sidebar_text_color', '#e2e8f0')).strip()[:20],
-            'border_radius': str(f.get('border_radius', '14px')).strip()[:10],
+            # Colores y diseño (se insertan en un bloque <style>: solo valores de una lista cerrada)
+            'primary_color': pick_color('primary_color'),
+            'sidebar_color': pick_color('sidebar_color'),
+            'accent_color': pick_color('accent_color'),
+            'page_bg_color': pick_color('page_bg_color'),
+            'card_bg_color': pick_color('card_bg_color'),
+            'sidebar_text_color': pick_color('sidebar_text_color'),
+            'border_radius': pick_choice('border_radius', ('8px', '14px', '22px')),
 
             # Tipografía
-            'font_family': str(f.get('font_family', 'Inter, system-ui, sans-serif')).strip()[:80],
-            'font_size': str(f.get('font_size', '14px')).strip()[:10],
+            'font_family': pick_choice('font_family', FONT_CHOICES),
+            'font_size': pick_choice('font_size', ('12px', '13px', '14px', '15px', '16px', '17px', '18px')),
 
             # Pestañas
-            'tabs_style': str(f.get('tabs_style', 'capsule')).strip()[:20],
+            'tabs_style': pick_choice('tabs_style', ('capsule', 'underline', 'pills', 'segmented')),
 
             # Animación de bus
             'bus_animation': '1' if f.get('bus_animation') else '0',
-            'animation_duration': str(f.get('animation_duration', '1.8')).strip()[:10],
+            'animation_duration': pick_choice('animation_duration', ('1.5', '1.8', '2.0', '2.5')),
             'bus_led_text': str(f.get('bus_led_text', 'GUAYTACAMA')).strip()[:30] or 'GUAYTACAMA',
             'bus_badge_tag': str(f.get('bus_badge_tag', 'RUTA GUAYTACAMA')).strip()[:40] or 'RUTA GUAYTACAMA',
             'bus_badge_sub': str(f.get('bus_badge_sub', '')).strip()[:120] or curr_s.get('bus_badge_sub', 'Buses Guaytacama · Puntualidad, Confort y Seguridad'),

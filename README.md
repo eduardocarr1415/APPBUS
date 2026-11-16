@@ -77,7 +77,9 @@ El administrador elige la fecha efectiva al realizar cada cierre; no hay una fec
 - Base de datos creada automáticamente: `instance/buses.sqlite3`.
 - Adjuntos privados: `instance/uploads/`.
 - Generar copia consistente de SQLite: `python manage.py backup` (carpeta `copias_seguridad/`). **Haga también copia de `instance/uploads/`**.
-- Crear el primer administrador: `python manage.py init`.
+- Crear el primer administrador: `python manage.py init`. La contraseña que el administrador cambie en **Mi perfil** se conserva entre reinicios.
+- Si se olvida la contraseña de `admin`: `python manage.py reset-admin` (la devuelve a la predeterminada, reactiva la cuenta y cierra sus sesiones).
+- Detrás de un proxy inverso con HTTPS: `BUS_HTTPS=1` (cookie segura y HSTS) y `BUS_TRUST_PROXY=1` para registrar la IP real del cliente desde `X-Forwarded-For`. Sin proxy, deje `BUS_TRUST_PROXY=0`.
 - Cargar datos ficticios una sola vez (genera también cuentas y contraseñas aleatorias de prueba): `python manage.py demo`.
 - Pruebas (opcional): `python -m pip install -r requirements-dev.txt` y después `python -m pytest -q`.
 

@@ -84,7 +84,7 @@ def demo():
         con.execute('UPDATE debts SET paid_cents=paid_cents+2000 WHERE id=?',(debt['id'],))
         for i,sid in enumerate(socioids[:6]):
             con.execute('INSERT INTO weekly_marks(period_id,socio_id,week_start,concept,amount_cents,state,created_by) VALUES(?,?,?,?,?,?,?)',
-                        (period['id'],sid,day(0),'Marcación semanal (Demo)',500 if i%2 else 0,'Marcado',uid))
+                        (period['id'],sid,day(0),'Marcación semanal (Demo)',500,'Pendiente',uid))
         for i in range(3):
             con.execute('INSERT INTO vigilance(period_id,socio_id,unit_id,category,details,day,created_by) VALUES(?,?,?,?,?,?,?)',
                         (period['id'],socioids[i],unitids[i],'Control de trabajo','Revisión administrativa de demostración.',day(i+8),uid))
@@ -122,11 +122,7 @@ def backup():
 
 def reset_admin():
     DB.init()
-    DB.ensure_default_admin()
-    with DB.connection() as con:
-        admin = con.execute("SELECT id FROM users WHERE username='admin'").fetchone()
-        if admin:
-            con.execute("DELETE FROM sessions WHERE user_id=?", (admin['id'],))
+    DB.ensure_default_admin(force_reset=True)
     print("\nContraseña de 'admin' restablecida correctamente al hash predeterminado.\n")
 
 if __name__=='__main__':

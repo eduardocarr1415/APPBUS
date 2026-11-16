@@ -4,7 +4,7 @@ import json
 from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
-from .security import DEFAULT_ADMIN_PASSWORD_HASH
+from .security import DEFAULT_ADMIN_PASSWORD_HASH, nowstr
 
 PERMISSIONS = {
     'socios.ver': 'Consultar socios', 'socios.crear': 'Registrar y editar socios',
@@ -227,8 +227,14 @@ class Database:
             self.migrate_weekly_marks(con)
             con.execute("DELETE FROM role_permissions WHERE permission IN ('vigilancia.ver','vigilancia.editar','reportes.vigilancia')")
             self.ensure_fine_cycle(con,date.today())
+            self.purge_expired(con, nowstr())
 
-    def ensure_default_admin(self):
+    def ensure_default_admin(self, force_reset=False):
+        """Create the 'admin' account if missing.
+
+        Only when force_reset=True (CLI `manage.py reset-admin`) is an existing admin's
+        password restored to the default hash; otherwise a password changed by the
+        administrator survives restarts."""
         with self.connection() as con:
             admin_role = con.execute("SELECT id FROM roles WHERE name='Administrador'").fetchone()
             if not admin_role:
@@ -241,11 +247,19 @@ class Database:
                     ('admin', 'Administrador principal', None, DEFAULT_ADMIN_PASSWORD_HASH, role_id)
                 )
                 Database.audit(con, None, 'Inicializar', 'sistema', None, 'Administrador predeterminado configurado.')
-            else:
+            elif force_reset:
                 con.execute(
-                    "UPDATE users SET password_hash=?, active=1 WHERE username='admin'",
-                    (DEFAULT_ADMIN_PASSWORD_HASH,)
+                    "UPDATE users SET password_hash=?, active=1, role_id=?, session_version=session_version+1 WHERE username='admin'",
+                    (DEFAULT_ADMIN_PASSWORD_HASH, role_id)
                 )
+                con.execute("DELETE FROM sessions WHERE user_id=?", (admin_user['id'],))
+                Database.audit(con, None, 'Restablecer clave', 'usuarios', admin_user['id'],
+                               "Contraseña de 'admin' restablecida desde la consola (manage.py reset-admin).")
+
+    @staticmethod
+    def purge_expired(con, now_iso):
+        """Remove expired sessions so anonymous visits do not grow the table indefinitely."""
+        con.execute('DELETE FROM sessions WHERE expires_at<=?', (now_iso,))
 
     @staticmethod
     def migrate_fine_cycles(con):

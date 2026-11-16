@@ -20,7 +20,7 @@
 <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="week_start" value="{{ week_start }}">
 <div class="form-grid">
 <div class="field">
-<label for="weekly-mark-amount">Valor del aporte por socio (S/) <span class="required">*</span></label>
+<label for="weekly-mark-amount">Valor del aporte por socio ($) <span class="required">*</span></label>
 <input id="weekly-mark-amount" type="number" name="amount" value="{{ amount }}" min="0.01" max="9999999999.99" step="0.01" inputmode="decimal" placeholder="0.00" required>
 </div>
 <p class="hint full">El pendiente total inicial será el aporte multiplicado por {{ entries|length }} socios activos.</p>

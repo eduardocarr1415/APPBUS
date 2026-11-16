@@ -70,19 +70,19 @@ def spec(db,kind):
     roles=options(db,'SELECT id,name FROM roles ORDER BY id')
     S={
      'socios':('Registrar socio',[field('name','Nombres y apellidos','person_name'),field('cedula','Cédula','cedula'),field('phone','Celular','phone'),field('email','Correo electrónico','email'),field('joined','Fecha de ingreso','date'),field('notes','Observaciones','textarea',False)]),
-     'traspasos':('Registrar traspaso de unidad',[field('unit_id','Unidad que se traspasa','select',options=transfer_units),field('new_socio_id','Nuevo socio propietario','select',options=socios),field('transferred_at','Fecha del traspaso','date'),field('amount','Valor del traspaso (S/)','money'),field('method','Método de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')]),field('document_reference','Referencia del documento de compraventa',required=False),field('notes','Observaciones','textarea',False)]),
+     'traspasos':('Registrar traspaso de unidad',[field('unit_id','Unidad que se traspasa','select',options=transfer_units),field('new_socio_id','Nuevo socio propietario','select',options=socios),field('transferred_at','Fecha del traspaso','date'),field('amount','Valor del traspaso ($)','money'),field('method','Método de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')]),field('document_reference','Referencia del documento de compraventa',required=False),field('notes','Observaciones','textarea',False)]),
      'vehiculos':('Registrar vehículo',[field('plate','Placa'),field('brand','Marca',required=False),field('model','Modelo',required=False),field('year','Año','number',False),field('status','Estado','select',options=[('Activo','Activo'),('Mantenimiento','Mantenimiento'),('Inactivo','Inactivo')])]),
      'unidades':('Registrar unidad',[field('code','Código de unidad'),field('socio_id','Socio responsable','select',False,[('', 'Sin asignar')]+socios),field('vehicle_id','Vehículo','select',False,[('', 'Sin vehículo')]+vehiculos),field('status','Estado','select',options=[('Activa','Activa'),('Mantenimiento','Mantenimiento'),('Inactiva','Inactiva')])]),
-     'cambios':('Registrar cambio de vehículo',[field('unit_id','Unidad','select',options=unidades),field('new_vehicle_id','Nuevo vehículo','select',options=vehiculos),field('reason','Motivo del cambio'),field('amount','Valor del cambio (S/)','money',False),field('changed_at','Fecha de cambio','date'),field('method','Forma de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
+     'cambios':('Registrar cambio de vehículo',[field('unit_id','Unidad','select',options=unidades),field('new_vehicle_id','Nuevo vehículo','select',options=vehiculos),field('reason','Motivo del cambio'),field('amount','Valor del cambio ($)','money',False),field('changed_at','Fecha de cambio','date'),field('method','Forma de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
      'reuniones':('Nueva reunión',[field('type','Tipo de reunión','select',options=[('Consejo de Administración','Consejo de Administración'),('Asamblea General','Asamblea General'),('Asamblea Extraordinaria','Asamblea Extraordinaria')]),field('topic','Tema'),field('meeting_date','Fecha','date'),field('meeting_time','Hora','time'),field('location','Lugar'),field('agenda','Orden del día','textarea',False)]),
      'actas':('Redactar acta',[field('meeting_id','Reunión','select',options=meetings),field('minutes','Contenido del acta','textarea'),field('minutes_state','Estado del acta','select',options=[('Borrador','Borrador'),('En revisión','En revisión'),('Aprobada','Aprobada')])]),
      'convocatorias':('Crear convocatoria',[field('meeting_id','Reunión','select',options=meetings),field('notice','Texto de la convocatoria','textarea')]),
      'asistencia':('Registrar asistencia',[field('meeting_id','Reunión','select',options=meetings),field('socio_id','Socio','select',options=socios),field('status','Asistencia','select',options=[('Asistió','Asistió'),('Faltó','Faltó'),('Justificó','Justificó')])]),
-     'ingresos':('Registrar ingreso',[field('day','Fecha','date'),field('socio_id','Socio','select',False,[('', 'Ingreso de la compañía')]+socios),field('category','Tipo de ingreso','select',options=[('Aporte','Aporte'),('Cuota','Cuota'),('Servicio','Servicio'),('Cambio de vehículo','Cambio de vehículo'),('Otros','Otros')]),field('concept','Concepto'),field('amount','Monto (S/)','money'),field('method','Método de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
-     'egresos':('Registrar egreso',[field('day','Fecha','date'),field('category','Categoría del egreso','select',options=[('Servicios básicos','Servicios básicos'),('Mantenimiento','Mantenimiento'),('Combustible','Combustible'),('Repuestos','Repuestos'),('Administración','Administración'),('Otros','Otros')]),field('concept','Concepto'),field('recipient','Beneficiario o proveedor',required=False),field('amount','Monto (S/)','money'),field('method','Método de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
-     'deudas':('Registrar deuda',[field('socio_id','Socio','select',options=socios),field('concept','Concepto'),field('amount','Monto (S/)','money'),field('issued','Fecha de emisión','date'),field('due','Vencimiento','date',False)]),
-     'pagos':('Registrar pago de deuda',[field('debt_id','Deuda pendiente','select',options=debts),field('amount','Monto abonado (S/)','money'),field('day','Fecha','date'),field('method','Medio de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
-     'multas':('Registrar multa',[field('socio_id','Socio o conductor','select',options=socios),field('unit_id','Unidad','select',False,[('','Sin asignar')]+unidades),field('category','Categoría','select',options=[('Atraso','Atraso'),('Minutos','Minutos'),('Radio','Radio'),('Trabajo','Trabajo'),('Otros','Otros')]),field('reason','Motivo de la multa'),field('occurred_at','Fecha','date'),field('amount','Monto (S/)','money')]),
+     'ingresos':('Registrar ingreso',[field('day','Fecha','date'),field('socio_id','Socio','select',False,[('', 'Ingreso de la compañía')]+socios),field('category','Tipo de ingreso','select',options=[('Aporte','Aporte'),('Cuota','Cuota'),('Servicio','Servicio'),('Cambio de vehículo','Cambio de vehículo'),('Otros','Otros')]),field('concept','Concepto'),field('amount','Monto ($)','money'),field('method','Método de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
+     'egresos':('Registrar egreso',[field('day','Fecha','date'),field('category','Categoría del egreso','select',options=[('Servicios básicos','Servicios básicos'),('Mantenimiento','Mantenimiento'),('Combustible','Combustible'),('Repuestos','Repuestos'),('Administración','Administración'),('Otros','Otros')]),field('concept','Concepto'),field('recipient','Beneficiario o proveedor',required=False),field('amount','Monto ($)','money'),field('method','Método de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
+     'deudas':('Registrar deuda',[field('socio_id','Socio','select',options=socios),field('concept','Concepto'),field('amount','Monto ($)','money'),field('issued','Fecha de emisión','date'),field('due','Vencimiento','date',False)]),
+     'pagos':('Registrar pago de deuda',[field('debt_id','Deuda pendiente','select',options=debts),field('amount','Monto abonado ($)','money'),field('day','Fecha','date'),field('method','Medio de pago','select',options=[('Efectivo','Efectivo'),('Transferencia','Transferencia'),('Depósito','Depósito')])]),
+     'multas':('Registrar multa',[field('socio_id','Socio o conductor','select',options=socios),field('unit_id','Unidad','select',False,[('','Sin asignar')]+unidades),field('category','Categoría','select',options=[('Atraso','Atraso'),('Minutos','Minutos'),('Radio','Radio'),('Trabajo','Trabajo'),('Otros','Otros')]),field('reason','Motivo de la multa'),field('occurred_at','Fecha','date'),field('amount','Monto ($)','money')]),
      'usuarios':('Registrar usuario',[field('full_name','Nombre completo','person_name'),field('username','Usuario','username'),field('email','Correo','email',False),field('role_id','Rol','select',options=roles),field('socio_id','Socio vinculado','select',False,[('', 'No vinculado')]+socios),field('password','Contraseña (mínimo 12 caracteres)','password')]),
     }
     if kind not in S: raise ValueError('Tipo de registro desconocido.')
@@ -209,7 +209,7 @@ def save(db, kind, data, uid, existing_id=None, ip=None):
             Database.audit(con,uid,'Traspasar','traspasos',rid,
                            f"Unidad {unit['code']}: {unit['seller']} → {buyer['name']} (bus, acciones y derechos)", ip=ip)
             Database.audit(con,uid,'Registrar ingreso','ingresos',income_id,
-                           f"Ingreso de {v['amount']/100:.2f} S/ por traspaso de unidad {unit['code']} ({v['method']})",ip=ip)
+                           f"Ingreso de ${v['amount']/100:.2f} por traspaso de unidad {unit['code']} ({v['method']})",ip=ip)
             return rid
         elif kind=='cambios':
             prev=con.execute('SELECT vehicle_id FROM units WHERE id=?',(v['unit_id'],)).fetchone()
@@ -285,25 +285,25 @@ def save(db, kind, data, uid, existing_id=None, ip=None):
             summary = f"Asistencia individual registrada para reunión ID {rid}"
         elif kind == 'ingresos':
             amt_val = v.get('amount', 0)
-            amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)
+            amt_str = f"${amt_val/100:.2f}" if isinstance(amt_val, (int, float)) else str(amt_val)
             summary = f"Ingreso de {amt_str} - {v.get('concept')} ({v.get('category')})"
         elif kind == 'egresos':
             amt_val = v.get('amount', 0)
-            amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)
+            amt_str = f"${amt_val/100:.2f}" if isinstance(amt_val, (int, float)) else str(amt_val)
             summary = f"Egreso de {amt_str} - {v.get('concept')} ({v.get('category')})"
         elif kind == 'deudas':
             amt_val = v.get('amount', 0)
-            amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)
+            amt_str = f"${amt_val/100:.2f}" if isinstance(amt_val, (int, float)) else str(amt_val)
             summary = f"Deuda de {amt_str} - {v.get('concept')}"
         elif kind == 'pagos':
             amt_val = v.get('amount', 0)
-            amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)
+            amt_str = f"${amt_val/100:.2f}" if isinstance(amt_val, (int, float)) else str(amt_val)
             summary = f"Abono de {amt_str} a deuda ID {v.get('debt_id')} ({v.get('method')})"
         elif kind == 'marcaciones':
             summary = f"Marcación semanal {v.get('week_start')} - {v.get('concept')} ({v.get('state')})"
         elif kind == 'multas':
             amt_val = v.get('amount', 0)
-            amt_str = f"{amt_val/100:.2f} S/" if isinstance(amt_val, (int, float)) else str(amt_val)
+            amt_str = f"${amt_val/100:.2f}" if isinstance(amt_val, (int, float)) else str(amt_val)
             summary = f"Multa de {amt_str} - {v.get('reason')} ({v.get('category')})"
         elif kind == 'vigilancia':
             summary = f"Control vigilancia: {v.get('category')} - {str(v.get('details',''))[:60]}"

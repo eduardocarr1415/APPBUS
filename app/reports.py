@@ -17,7 +17,7 @@ REPORT_TYPES = {
 }
 
 def fmt(cents):
-    return f'S/ {int(cents or 0)/100:,.2f}'
+    return f'${int(cents or 0)/100:,.2f}'
 
 def build_rows(db, kind, period_id, month=None, fine_cycle_id=None):
     if kind=='gerencia':

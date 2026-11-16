@@ -182,11 +182,11 @@ def test_report_outputs_and_period_close_guard(environment):
     assert 'reporte_finanzas_'+month+'.pdf' in monthly_financial_pdf.headers['content-disposition']
     monthly=c.get('/reporte/gerencia.csv?month='+month)
     assert monthly.status_code==200 and b'Ingresos registrados' in monthly.content
-    assert b'Total de ingresos' in monthly.content and b'S/ 100.00' in monthly.content
-    assert b'Total de egresos' in monthly.content and b'S/ 25.00' in monthly.content
-    assert b'Saldo disponible al inicio del mes' in monthly.content and b'S/ 40.00' in monthly.content
-    assert b'Balance neto del mes' in monthly.content and b'S/ 75.00' in monthly.content
-    assert b'Saldo disponible al cierre del mes' in monthly.content and b'S/ 115.00' in monthly.content
+    assert b'Total de ingresos' in monthly.content and b'$100.00' in monthly.content
+    assert b'Total de egresos' in monthly.content and b'$25.00' in monthly.content
+    assert b'Saldo disponible al inicio del mes' in monthly.content and b'$40.00' in monthly.content
+    assert b'Balance neto del mes' in monthly.content and b'$75.00' in monthly.content
+    assert b'Saldo disponible al cierre del mes' in monthly.content and b'$115.00' in monthly.content
     monthly_pdf=c.get('/reporte/gerencia.pdf?month='+month)
     assert monthly_pdf.status_code==200 and monthly_pdf.content.startswith(b'%PDF-')
     assert c.get('/reportes?tab=resumen').status_code==200
@@ -391,7 +391,7 @@ def test_unit_ownership_transfer_updates_owner_and_keeps_rights_history(environm
     assert history_page.status_code==200 and 'Registrar traspaso' in history_page.text
     transfer_form=c.get('/nuevo/traspasos')
     assert transfer_form.status_code==200
-    assert 'Guardar traspaso' in transfer_form.text and 'Valor del traspaso (S/)' in transfer_form.text
+    assert 'Guardar traspaso' in transfer_form.text and 'Valor del traspaso ($)' in transfer_form.text
     invalid=post(c,'/nuevo/traspasos',{
         'unit_id':str(unit),'new_socio_id':str(other),'transferred_at':date.today().isoformat(),
         'amount':'0','method':'Efectivo','document_reference':'','notes':''
@@ -1081,7 +1081,7 @@ def test_weekly_marks_are_created_searched_and_paid_as_income(environment):
     history=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}')
     assert history.status_code==200
     assert 'Socios y estado de pago' not in history.text
-    assert 'Ver lista' in history.text and 'S/ 25.00' in history.text
+    assert 'Ver lista' in history.text and '$25.00' in history.text
     history=c.get(f'/finanzas?tab=marcaciones&desde={today}&hasta={today}&lista=1')
     assert 'Socio Uno' in history.text and 'Socio Dos' in history.text
     assert history.text.count('12.50') >= 2 and '>Pagar</button>' in history.text
@@ -1183,5 +1183,163 @@ def test_weekly_pending_totals_sum_all_selected_dates_and_partial_payments(envir
     assert partial.status_code==303
 
     history=c.get(f'/finanzas?tab=marcaciones&desde={yesterday}&hasta={today}')
-    assert history.status_code==200 and 'S/ 55.00' in history.text
-    assert 'S/ 15.00' in history.text and 'S/ 40.00' in history.text
+    assert history.status_code==200 and '$55.00' in history.text
+    assert '$15.00' in history.text and '$40.00' in history.text
+
+
+# --- Regresiones de las mejoras de seguridad y validación (2026-11) ---
+
+def test_default_admin_password_survives_restart(tmp_path):
+    from app.security import password_ok, DEFAULT_ADMIN_PASSWORD_HASH
+    path=tmp_path/'restart.sqlite3'
+    first=create_app(path)
+    db=first.state.db
+    with db.connection() as con:
+        con.execute("UPDATE users SET password_hash=? WHERE username='admin'",(password_hash('NuevaClaveSegura2026'),))
+    create_app(path)  # simula reiniciar el servidor
+    stored=db.one("SELECT password_hash FROM users WHERE username='admin'")['password_hash']
+    assert stored!=DEFAULT_ADMIN_PASSWORD_HASH
+    assert password_ok('NuevaClaveSegura2026',stored)
+    db.ensure_default_admin(force_reset=True)
+    assert db.one("SELECT password_hash FROM users WHERE username='admin'")['password_hash']==DEFAULT_ADMIN_PASSWORD_HASH
+
+def test_forwarded_for_header_cannot_bypass_login_lockout(environment):
+    app,db,c,*_=environment
+    for i in range(5):
+        token=csrf(c)
+        c.post('/login',data={'username':'admin','password':'incorrecta-123','_csrf':token},
+               headers={'X-Forwarded-For':f'10.0.0.{i}'})
+    token=csrf(c)
+    blocked=c.post('/login',data={'username':'admin','password':'SecurePass123456','_csrf':token},
+                   headers={'X-Forwarded-For':'10.9.9.9'})
+    assert blocked.status_code==429
+    assert not db.one("SELECT 1 AS x FROM audit WHERE ip_address LIKE '10.%'")
+
+def test_lookup_api_hidden_from_socio_role(environment):
+    app,db,c,*_=environment
+    login(c,'socio')
+    assert c.get('/api/lookup-socio-unit?q=Socio').status_code==403
+    post(c,'/logout')
+    login(c)
+    rows=c.get('/api/lookup-socio-unit?q=Socio').json()
+    assert {r['name'] for r in rows}>={'Socio Uno','Socio Dos'}
+
+def test_lookup_json_cannot_break_out_of_script_tag(environment):
+    app,db,c,sid,*_=environment
+    with db.connection() as con:
+        vid=con.execute('INSERT INTO vehicles(plate,status) VALUES(?,?)',('</script><script>alert(1)</script>','Activo')).lastrowid
+        con.execute('INSERT INTO units(code,socio_id,vehicle_id,status) VALUES(?,?,?,?)',('U-XSS',sid,vid,'Activa'))
+    login(c)
+    page=c.get('/nuevo/multas')
+    assert page.status_code==200
+    assert '<script>alert(1)</script>' not in page.text
+    assert '\\u003c/script\\u003e' in page.text
+
+def test_configuration_rejects_css_and_url_injection(environment):
+    app,db,c,*_=environment
+    login(c)
+    token=csrf(c,'/configuracion')
+    resp=c.post('/configuracion',data={'_csrf':token,'company_name':'Compañía',
+        'primary_color':'red;}</style><script>alert(1)</script>',
+        'font_family':"x;}</style><script>alert(1)</script>",
+        'border_radius':'99px;background:url(//evil)',
+        'header_logo_url':'javascript:alert(1)','favicon_url':'https://evil.example/x.ico',
+        'tabs_style':'"><script>','animation_duration':'9999'},follow_redirects=False)
+    assert resp.status_code==303
+    s=db.get_settings()
+    defaults=Database.DEFAULT_SETTINGS
+    for key in ('primary_color','font_family','border_radius','header_logo_url','favicon_url',
+                'tabs_style','animation_duration'):
+        assert s[key]==defaults[key],key
+    # Valores heredados ya guardados en la base se neutralizan al renderizar.
+    db.update_settings({'font_family':"x;}</style><script>alert(1)</script>"})
+    assert '<script>alert(1)</script>' not in c.get('/').text
+
+def test_branding_upload_checks_content_and_sandboxes_svg(environment):
+    app,db,c,*_=environment
+    login(c)
+    token=csrf(c,'/configuracion')
+    fake=c.post('/configuracion',data={'_csrf':token,'company_name':'Compañía'},
+                files={'header_logo_file':('logo.png',b'<html>no es imagen</html>','image/png')})
+    assert fake.status_code==400
+    token=csrf(c,'/configuracion')
+    svg=b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    ok=c.post('/configuracion',data={'_csrf':token,'company_name':'Compañía'},
+              files={'header_logo_file':('logo.svg',svg,'image/svg+xml')},follow_redirects=False)
+    assert ok.status_code==303
+    url=db.get_settings()['header_logo_url']
+    assert url.startswith('/branding/')
+    served=c.get(url)
+    assert served.status_code==200
+    assert 'sandbox' in served.headers['content-security-policy']
+
+def test_fine_payment_validates_date_and_notes(environment):
+    app,db,c,sid,*_=environment
+    login(c)
+    today=date.today().isoformat()
+    assert post(c,'/nuevo/multas',{'socio_id':str(sid),'unit_id':'','category':'Atraso',
+        'reason':'Validación de fecha','occurred_at':today,'amount':'10.00'}).status_code==303
+    fine=db.one("SELECT id FROM fines WHERE reason='Validación de fecha'")
+    for bad in ('no-es-fecha',(date.today()+timedelta(days=1)).isoformat()):
+        assert post(c,f'/multas/{fine["id"]}/pagar',{'method':'Efectivo','day':bad}).status_code==400
+    assert post(c,f'/multas/{fine["id"]}/pagar',{'method':'Efectivo','day':today,'notes':'x'*300}).status_code==400
+    assert db.one('SELECT status FROM fines WHERE id=?',(fine['id'],))['status']=='Pendiente'
+    assert not db.one('SELECT 1 AS x FROM payments')
+
+def test_convocatoria_ignores_unknown_socio_ids(environment):
+    app,db,c,sid,*_=environment
+    login(c)
+    with db.connection() as con:
+        mid=con.execute("INSERT INTO meetings(type,topic,meeting_date,meeting_time,location) VALUES(?,?,?,?,?)",
+                        ('Asamblea General','Prueba',date.today().isoformat(),'10:00','Sala')).lastrowid
+    r=post(c,'/actas/convocatoria',{'meeting_id':str(mid),'notice':'Convocatoria',
+        'all_socio_ids':[str(sid),'999999'],'notified_ids':[str(sid),'999999']})
+    assert r.status_code==303
+    ids={row['socio_id'] for row in db.all('SELECT socio_id FROM meeting_notifications WHERE meeting_id=?',(mid,))}
+    assert ids=={sid}
+
+def test_expired_sessions_are_purged(environment):
+    app,db,c,*_=environment
+    with db.connection() as con:
+        con.execute("INSERT INTO sessions(token_hash,user_id,csrf,version,expires_at) VALUES('viejo',NULL,'x',0,'2000-01-01T00:00:00+00:00')")
+    login(c)
+    assert not db.one("SELECT 1 AS x FROM sessions WHERE token_hash='viejo'")
+
+
+def test_currency_is_dollar_everywhere(environment):
+    from app.reports import fmt
+    assert fmt(123456)=='$1,234.56'
+    app,db,c,sid,*_=environment
+    login(c)
+    assert '($)' in c.get('/nuevo/ingresos').text
+    assert post(c,'/nuevo/multas',{'socio_id':str(sid),'unit_id':'','category':'Atraso',
+        'reason':'Moneda dólar','occurred_at':date.today().isoformat(),'amount':'35.00'}).status_code==303
+    fine=db.one("SELECT id FROM fines WHERE reason='Moneda dólar'")
+    page=c.get(f'/multas/{fine["id"]}/pagar').text
+    assert '$35.00' in page and 'S/' not in page
+
+def test_future_fine_payment_shows_friendly_form(environment):
+    app,db,c,sid,*_=environment
+    login(c)
+    today=date.today().isoformat()
+    assert post(c,'/nuevo/multas',{'socio_id':str(sid),'unit_id':'','category':'Atraso',
+        'reason':'Pago futuro','occurred_at':today,'amount':'12.00'}).status_code==303
+    fine=db.one("SELECT id FROM fines WHERE reason='Pago futuro'")
+    form=c.get(f'/multas/{fine["id"]}/pagar').text
+    assert f'max="{today}"' in form and 'data-max-message=' in form
+    future=(date.today()+timedelta(days=3)).isoformat()
+    r=post(c,f'/multas/{fine["id"]}/pagar',{'method':'Transferencia','day':future,'notes':'Comprobante 77'})
+    assert r.status_code==400
+    assert 'Cobrar y pagar multa' in r.text and 'role="alert"' in r.text
+    assert 'No se puede registrar un pago con fecha futura' in r.text
+    assert f'value="{future}"' in r.text and 'Comprobante 77' in r.text
+    assert '<option value="Transferencia" selected>' in r.text
+    assert db.one('SELECT status FROM fines WHERE id=?',(fine['id'],))['status']=='Pendiente'
+
+def test_every_password_field_gets_visibility_toggle(environment):
+    app,db,c,*_=environment
+    js=c.get('/static/app.js').text
+    assert "input[type=\"password\"]" in js and 'password-visibility-toggle' in js
+    login(c)
+    assert 'type="password"' in c.get('/perfil').text
+    assert 'type="password"' in c.get('/nuevo/usuarios').text

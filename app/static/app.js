@@ -64,6 +64,26 @@ document.addEventListener('DOMContentLoaded',()=>{
   next.addEventListener('click',()=>{if(page<Math.ceil(visibleRows.length/10)){page++;render();}});
   render();
  });
+ // Norma del sistema: todo campo de contraseña (o de valor oculto) lleva el botón de ojo,
+ // igual que el login. Los campos que ya traen su botón en la plantilla no se duplican.
+ const eyeIcons='<svg data-password-icon="show" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg>'+
+  '<svg data-password-icon="hide" viewBox="0 0 24 24" aria-hidden="true" focusable="false" hidden><path d="m3 3 18 18"></path><path d="M10.6 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a15.7 15.7 0 0 1-3.1 3.9M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7c1.4 0 2.7-.3 3.8-.8"></path><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path></svg>';
+ document.querySelectorAll('input[type="password"]').forEach((field,index)=>{
+  if(field.closest('.password-input-wrap'))return;
+  if(!field.id)field.id=`password-field-${index+1}`;
+  const wrap=document.createElement('div');
+  wrap.className='password-input-wrap';
+  field.parentNode.insertBefore(wrap,field);
+  wrap.appendChild(field);
+  const button=document.createElement('button');
+  button.type='button';
+  button.className='password-visibility-toggle';
+  button.dataset.passwordToggle=field.id;
+  button.setAttribute('aria-label','Mostrar contraseña');
+  button.setAttribute('aria-pressed','false');
+  button.innerHTML=eyeIcons;
+  wrap.appendChild(button);
+ });
  document.querySelectorAll('[data-password-toggle]').forEach(button=>{
   const password=document.getElementById(button.dataset.passwordToggle);
   if(!password)return;
@@ -123,8 +143,8 @@ document.addEventListener('DOMContentLoaded',()=>{
    else if(validity.patternMismatch)message=field.title||'El formato ingresado no es válido.';
    else if(validity.tooShort)message=`Ingrese al menos ${field.minLength} caracteres.`;
    else if(validity.tooLong)message=`Ingrese como máximo ${field.maxLength} caracteres.`;
-   else if(validity.rangeUnderflow)message=`Ingrese un valor igual o superior a ${field.min}.`;
-   else if(validity.rangeOverflow)message=`Ingrese un valor igual o inferior a ${field.max}.`;
+   else if(validity.rangeUnderflow)message=field.dataset.minMessage||`Ingrese un valor igual o superior a ${field.min}.`;
+   else if(validity.rangeOverflow)message=field.dataset.maxMessage||`Ingrese un valor igual o inferior a ${field.max}.`;
    else if(validity.stepMismatch)message='Ingrese un valor permitido para este campo.';
    else if(validity.badInput)message='Ingrese un valor válido.';
    if(message){
