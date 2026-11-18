@@ -1530,7 +1530,7 @@ def create_app(db_path=None, testing=False):
                 unit_id = slot['unit_id']
                 unit_code = slot['unit_code'] or (f"Unidad #{unit_id}" if unit_id else "Sin unidad")
 
-                if socio_id and fine_amount > 0:
+                if unit_id and socio_id and fine_amount > 0:
                     reason = f"Atraso en control de llegada (Turno {slot['scheduled_time']}) - Sin registro fotográfico"
                     fine_id = con.execute("""
                         INSERT INTO fines (period_id, socio_id, unit_id, category, reason, occurred_at, amount_cents, created_by, fine_cycle_id)
@@ -1551,11 +1551,44 @@ def create_app(db_path=None, testing=False):
                 else:
                     con.execute("UPDATE bus_arrival_slots SET status='Expirado' WHERE id=?", (slot['id'],))
 
+            # Multar a todas las unidades activas que no registraron foto de llegada en este día
+            unregistered_active_units = con.execute("""
+                SELECT u.id, u.code, u.socio_id, sc.name AS socio_name
+                FROM units u
+                JOIN socios sc ON u.socio_id = sc.id
+                WHERE u.status = 'Activa'
+                  AND u.id NOT IN (
+                      SELECT DISTINCT unit_id FROM bus_arrival_slots
+                      WHERE day_id = ? AND status = 'Registrado' AND unit_id IS NOT NULL
+                  )
+                  AND u.id NOT IN (
+                      SELECT DISTINCT unit_id FROM fines
+                      WHERE category = 'Atraso' AND occurred_at = ? AND unit_id IS NOT NULL
+                  )
+            """, (day_row['id'], day)).fetchall()
+
+            for u in unregistered_active_units:
+                if u['socio_id'] and fine_amount > 0:
+                    reason = f"Atraso en control de llegada ({day}) - Unidad {u['code']} sin registro fotográfico"
+                    fine_id = con.execute("""
+                        INSERT INTO fines (period_id, socio_id, unit_id, category, reason, occurred_at, amount_cents, created_by, fine_cycle_id)
+                        VALUES (?, ?, ?, 'Atraso', ?, ?, ?, ?, ?)
+                    """, (period['id'], u['socio_id'], u['id'], reason, day, fine_amount, uid, fine_cycle['id'])).lastrowid
+
+                    con.execute("""
+                        INSERT INTO debts (period_id, socio_id, concept, amount_cents, issued, fine_id, created_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (period['id'], u['socio_id'], f"Multa: {reason}", fine_amount, day, fine_id, uid))
+                    fines_count += 1
+                    Database.audit(con, uid, 'Sistema registró multa', 'multas', fine_id,
+                                   f"Sistema registró multa por atraso de bus: ${fine_amount/100:.2f} a {u['socio_name']} (Unidad {u['code']})",
+                                   ip=ip)
+
             con.execute("UPDATE bus_arrival_days SET status='Finalizado', closed_at=CURRENT_TIMESTAMP, closed_by=? WHERE id=?",
                         (uid, day_row['id']))
 
             Database.audit(con, uid, 'Finalizar control de llegadas', 'llegadas', day_row['id'],
-                           f"Control de llegadas finalizado para {day}. Turnos no registrados: {len(unregistered)}, Multas automáticas por atraso generadas: {fines_count}",
+                           f"Control de llegadas finalizado para {day}. Multas automáticas por atraso generadas: {fines_count}",
                            ip=ip)
 
         return redir(f'/llegadas?day={day}', f"Control del día {day} finalizado correctamente. Se generaron {fines_count} multas por atraso con sus deudas asociadas.")
@@ -1613,23 +1646,13 @@ def create_app(db_path=None, testing=False):
                     end_h, end_m = 19, 0
                 cur_min = start_h * 60 + start_m
                 end_min = end_h * 60 + end_m
-                active_units = con.execute("SELECT id, socio_id FROM units WHERE status='Activa' ORDER BY code ASC").fetchall()
-                unit_idx = 0
-                num_units = len(active_units)
                 while cur_min <= end_min:
                     hh = cur_min // 60
                     mm = cur_min % 60
                     time_str = f"{hh:02d}:{mm:02d}"
-                    assigned_unit = None
-                    assigned_socio = None
-                    if num_units > 0:
-                        u = active_units[unit_idx % num_units]
-                        assigned_unit = u['id']
-                        assigned_socio = u['socio_id']
-                        unit_idx += 1
                     con.execute("""INSERT INTO bus_arrival_slots (day_id, day, scheduled_time, unit_id, socio_id, status)
-                                   VALUES (?, ?, ?, ?, ?, 'Pendiente')""",
-                                (day_row['id'], day, time_str, assigned_unit, assigned_socio))
+                                   VALUES (?, ?, ?, NULL, NULL, 'Pendiente')""",
+                                (day_row['id'], day, time_str))
                     cur_min += interval_minutes
 
             Database.audit(con, uid, 'Configurar control de llegadas', 'llegadas', day_row['id'],

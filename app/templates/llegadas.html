@@ -108,14 +108,14 @@
       {% elif active_slot %}
         <div class="active-slot-banner">
           <span class="pulse-indicator"></span>
-          <span class="active-slot-label">TURNO ACTIVO: <strong>{{ active_slot.scheduled_time }}</strong></span>
+          <span class="active-slot-label">TURNO ACTIVO EN CURSO: <strong>{{ active_slot.scheduled_time }}</strong></span>
           {% if active_slot.status == 'Registrado' %}
             <span class="badge green">✓ Ya registrado con foto</span>
           {% else %}
             <div class="countdown-display" id="main-countdown-display">
               <span class="countdown-digits" id="timer-minutes">02</span>:<span class="countdown-digits" id="timer-seconds">00</span>
             </div>
-            <span class="countdown-note">Corren los 2 minutos: busque la unidad y suba la foto</span>
+            <span class="countdown-note">Corren los 2 minutos: seleccione la unidad que llegó y suba la foto</span>
           {% endif %}
         </div>
       {% else %}
@@ -123,6 +123,7 @@
           {% if next_slot %}
             <span>⏳ Próximo turno: <strong>{{ next_slot.scheduled_time }}</strong></span>
             <small class="muted" id="next-slot-countdown">En espera de la hora programada</small>
+          </div>
           {% else %}
             <span>✅ Todos los turnos de hoy han concluido.</span>
           {% endif %}
@@ -132,10 +133,10 @@
     <div class="timer-col instructions-col">
       <span class="timer-col-label">Reglas Operativas</span>
       <ul class="timer-rules-list">
-        <li><strong>Hora Ecuador:</strong> Cada turno se activa exactamente a su hora programada.</li>
-        <li><strong>Ventana de 2 minutos:</strong> Corren 2 minutos para buscar la unidad y subir la foto.</li>
-        <li><strong>Bloqueo estricto:</strong> Al agotarse los 2 minutos, la subida queda bloqueada.</li>
-        <li><strong>Finalizar día:</strong> Turnos sin foto se convierten en multas automáticas por atraso.</li>
+        <li><strong>Solo a su hora:</strong> Cada turno se habilita únicamente al llegar esa hora exacta.</li>
+        <li><strong>Ni antes ni después:</strong> Antes de la hora o pasados los 2 minutos, la subida queda bloqueada.</li>
+        <li><strong>Flecha de unidad:</strong> Seleccione con la flecha qué bus llegó a ese punto de control.</li>
+        <li><strong>Finalizar día:</strong> Las unidades que no tengan foto registrada van directamente a multas por atraso.</li>
       </ul>
     </div>
   </div>
@@ -154,11 +155,11 @@
     <table class="asistencia-table llegadas-table" id="tabla-llegadas">
       <thead>
         <tr>
-          <th style="width:75px;text-align:center;">Turno</th>
-          <th style="width:190px;">Unidad</th>
+          <th style="width:80px;text-align:center;">Turno</th>
+          <th style="width:200px;">Unidad</th>
           <th>Socio / Conductor</th>
           <th style="width:130px;text-align:center;">Estado</th>
-          <th style="width:280px;">Evidencia Fotográfica</th>
+          <th style="width:290px;">Evidencia Fotográfica</th>
           <th style="width:160px;text-align:center;">Registro</th>
         </tr>
       </thead>
@@ -175,29 +176,28 @@
             <div class="slot-time-tag-wrap" id="time-tag-wrap-{{ s.id }}"></div>
           </td>
 
-          <!-- Unidad Asignada / Buscador -->
+          <!-- Unidad / Flecha de selección -->
           <td>
             {% if s.status == 'Registrado' %}
               <div class="unit-badge-wrap">
                 <strong class="unit-code-badge">🚌 {{ s.unit_code or 'Unidad #' ~ s.unit_id }}</strong>
               </div>
-            {% elif s.status == 'Multado' or day_info.status == 'Finalizado' %}
+            {% elif s.status == 'Multado' %}
               <div>
-                <strong class="unit-code-badge {% if s.status == 'Multado' %}text-danger{% endif %}">
-                  🚌 {{ s.unit_code or 'Sin asignar' }}
+                <strong class="unit-code-badge text-danger">
+                  🚌 {{ s.unit_code or 'Sin registro' }}
                 </strong>
               </div>
+            {% elif day_info.status == 'Finalizado' %}
+              <span class="muted">—</span>
             {% else %}
-              <!-- Buscador rápido y Dropdown -->
+              <!-- Flecha de unidad para seleccionar cuál fue -->
               <div class="unit-select-wrap">
-                <input type="text" class="quick-unit-filter" placeholder="🔍 Buscar unidad..."
-                       oninput="filterUnitsForSlot(this, 'unit-select-{{ s.id }}')"
-                       title="Escriba el número de unidad o socio para filtrar al instante">
-                <select id="unit-select-{{ s.id }}" name="unit_id" form="form-slot-{{ s.id }}" class="asistencia-select slot-unit-select" required aria-label="Seleccionar unidad para turno {{ s.scheduled_time }}">
-                  <option value="" disabled {% if not s.unit_id %}selected{% endif %}>-- Elegir unidad --</option>
+                <select id="unit-select-{{ s.id }}" name="unit_id" form="form-slot-{{ s.id }}" class="asistencia-select slot-unit-select" required disabled aria-label="Seleccionar unidad para turno {{ s.scheduled_time }}">
+                  <option value="" disabled selected>-- Seleccionar unidad ▼ --</option>
                   {% for u in active_units %}
-                  <option value="{{ u.id }}" {% if s.unit_id == u.id %}selected{% endif %} data-socio="{{ u.socio_name or 'Sin socio' }}">
-                    {{ u.code }} ({{ u.socio_name or 'Sin socio' }})
+                  <option value="{{ u.id }}" data-socio="{{ u.socio_name or 'Sin socio' }}">
+                    Unidad {{ u.code }}
                   </option>
                   {% endfor %}
                 </select>
@@ -205,10 +205,10 @@
             {% endif %}
           </td>
 
-          <!-- Socio -->
+          <!-- Socio / Conductor -->
           <td>
             <span class="slot-socio-name" id="socio-display-{{ s.id }}">
-              {{ s.socio_name or 'Sin socio asignado' }}
+              {{ s.socio_name or '—' }}
             </span>
           </td>
 
@@ -237,7 +237,7 @@
                 </div>
               </div>
             {% elif day_info.status == 'Abierto' and can_edit and s.status == 'Pendiente' %}
-              <!-- Formulario de subida de foto coordinado con reloj -->
+              <!-- Formulario de subida de foto: SOLO se habilita cuando llega esa hora (por 2 min) -->
               <form action="/llegadas/registrar" method="post" enctype="multipart/form-data" id="form-slot-{{ s.id }}" class="slot-upload-form" data-slot-id="{{ s.id }}" data-time="{{ s.scheduled_time }}">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <input type="hidden" name="slot_id" value="{{ s.id }}">
@@ -245,13 +245,13 @@
 
                 <div class="slot-file-row">
                   <label for="foto-{{ s.id }}" class="slot-file-label sr-only">Foto del bus</label>
-                  <input type="file" id="foto-{{ s.id }}" name="foto" accept="image/png, image/jpeg, image/jpg, image/webp" capture="environment" class="slot-file-input" required>
-                  <button type="submit" class="btn primary small btn-registrar-llegada" id="btn-submit-{{ s.id }}" title="Subir foto y confirmar llegada">
+                  <input type="file" id="foto-{{ s.id }}" name="foto" accept="image/png, image/jpeg, image/jpg, image/webp" capture="environment" class="slot-file-input" required disabled>
+                  <button type="submit" class="btn primary small btn-registrar-llegada" id="btn-submit-{{ s.id }}" title="Solo se habilita al llegar la hora {{ s.scheduled_time }}" disabled>
                     📷 Registrar
                   </button>
                 </div>
                 <div class="slot-timer-inline" id="inline-timer-{{ s.id }}">
-                  <small class="slot-live-timer-tag" id="timer-tag-{{ s.id }}">Inicia a las {{ s.scheduled_time }}</small>
+                  <small class="slot-live-timer-tag" id="timer-tag-{{ s.id }}">🔒 Disponible a las {{ s.scheduled_time }}</small>
                 </div>
               </form>
             {% elif s.status == 'Multado' %}
@@ -262,7 +262,7 @@
             {% else %}
               <div class="slot-expired-box">
                 <span class="badge orange">✕ Tiempo agotado</span>
-                <small class="muted">Sin registro</small>
+                <small class="muted">Subida bloqueada</small>
               </div>
             {% endif %}
           </td>
@@ -351,7 +351,7 @@
       </div>
 
       <div class="notice info" style="margin-top:12px;">
-        Al modificar los horarios o intervalo en un día sin registros, los turnos se recalculan automáticamente manteniendo la rotación de unidades.
+        Al modificar los horarios o intervalo en un día sin registros, los turnos se recalculan automáticamente.
       </div>
 
       <div class="form-actions" style="margin-top:16px;display:flex;justify-content:flex-end;gap:10px;">
@@ -387,7 +387,7 @@ function closeConfigModal() {
 }
 document.getElementById('btn-open-config-modal')?.addEventListener('click', openConfigModal);
 
-// Actualizar socio al cambiar el dropdown de unidad en una fila
+// Actualizar socio al seleccionar una unidad en el dropdown
 document.querySelectorAll('.slot-unit-select').forEach(function(sel) {
   sel.addEventListener('change', function() {
     var opt = this.options[this.selectedIndex];
@@ -398,28 +398,8 @@ document.querySelectorAll('.slot-unit-select').forEach(function(sel) {
   });
 });
 
-// Buscador rápido de unidad para el turno
-function filterUnitsForSlot(inputEl, selectId) {
-  var filter = inputEl.value.trim().toLowerCase();
-  var select = document.getElementById(selectId);
-  if (!select) return;
-  var matched = false;
-  for (var i = 0; i < select.options.length; i++) {
-    var opt = select.options[i];
-    if (!opt.value) continue;
-    var text = opt.textContent.toLowerCase();
-    var visible = text.indexOf(filter) !== -1;
-    opt.hidden = !visible;
-    if (visible && !matched && filter.length > 0) {
-      select.selectedIndex = i;
-      matched = true;
-      select.dispatchEvent(new Event('change'));
-    }
-  }
-}
-
 // =======================================================================
-// COORDINACIÓN EN TIEMPO REAL: RELOJ ECUADOR (GUAYAQUIL) Y VENTANA DE 2 MINUTOS
+// COORDINACIÓN ESTRICTA: SOLO SE HABILITA AL LLEGAR LA HORA (NI ANTES NI DESPUÉS)
 // =======================================================================
 (function() {
   var timerCard = document.getElementById('llegadas-live-timer');
@@ -434,7 +414,7 @@ function filterUnitsForSlot(inputEl, selectId) {
   var clockEl = document.getElementById('live-digital-clock');
   var topDisplayEl = document.getElementById('top-timer-countdown-col');
 
-  // Hora Ecuador (Guayaquil) UTC-5 exacta sincronizada con servidor
+  // Hora Oficial Ecuador (Guayaquil) UTC-5 exacta calibrada
   function getEcuadorNow() {
     var adjustedMs = Date.now() + serverOffsetMs;
     var d = new Date(adjustedMs);
@@ -454,7 +434,6 @@ function filterUnitsForSlot(inputEl, selectId) {
 
     if (clockEl) clockEl.textContent = timeStr;
 
-    // Solo coordinar turnos activos si es el día de hoy y el control está abierto
     if (!isToday || dayStatus !== 'Abierto') {
       return;
     }
@@ -466,7 +445,7 @@ function filterUnitsForSlot(inputEl, selectId) {
 
     slotRows.forEach(function(row) {
       var slotId = row.getAttribute('data-slot-id');
-      var slotTime = row.getAttribute('data-time'); // ej "09:30"
+      var slotTime = row.getAttribute('data-time'); // ej "08:10"
       var slotStatus = row.getAttribute('data-status'); // "Pendiente", "Registrado", "Multado"
       if (!slotTime) return;
 
@@ -474,7 +453,7 @@ function filterUnitsForSlot(inputEl, selectId) {
       var sh = parseInt(parts[0], 10);
       var sm = parseInt(parts[1], 10);
       var slotStartSecs = sh * 3600 + sm * 60;
-      var slotEndSecs = slotStartSecs + 120; // Exactamente 2 minutos (120 segundos)
+      var slotEndSecs = slotStartSecs + 120; // 2 minutos exactos (120 segundos)
 
       var form = row.querySelector('.slot-upload-form');
       var pill = row.querySelector('.slot-status-pill');
@@ -482,14 +461,13 @@ function filterUnitsForSlot(inputEl, selectId) {
       var inlineTimer = row.querySelector('.slot-live-timer-tag');
       var submitBtn = row.querySelector('.btn-registrar-llegada');
       var fileInput = row.querySelector('.slot-file-input');
-      var quickSearch = row.querySelector('.quick-unit-filter');
       var unitSelect = row.querySelector('.slot-unit-select');
 
       if (slotStatus === 'Registrado' || slotStatus === 'Multado') {
         return;
       }
 
-      // 1. EL TURNO ESTÁ ACTIVO AHORA (dentro de los 2 minutos)
+      // 1. SOLO SE HABILITA AL LLEGAR LA HORA EXACTA (y dura máximo 2 minutos)
       if (curTotalSecs >= slotStartSecs && curTotalSecs <= slotEndSecs) {
         var remSecs = slotEndSecs - curTotalSecs;
         activeSlot = { id: slotId, time: slotTime, remainingSecs: remSecs };
@@ -505,13 +483,13 @@ function filterUnitsForSlot(inputEl, selectId) {
           timeTag.innerHTML = '<span class="pulse-tag">EN CURSO</span>';
         }
         if (form) form.style.display = 'flex';
+        // HABILITADO ÚNICAMENTE AHORA
+        if (unitSelect) unitSelect.disabled = false;
+        if (fileInput) fileInput.disabled = false;
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.title = 'Subir foto y confirmar llegada';
         }
-        if (fileInput) fileInput.disabled = false;
-        if (quickSearch) quickSearch.disabled = false;
-        if (unitSelect) unitSelect.disabled = false;
 
         var remM = Math.floor(remSecs / 60);
         var remS = remSecs % 60;
@@ -520,7 +498,7 @@ function filterUnitsForSlot(inputEl, selectId) {
           inlineTimer.className = 'slot-live-timer-tag ' + (remSecs <= 30 ? 'text-danger pulse-text' : 'text-primary');
         }
       }
-      // 2. EL TURNO YA EXPIRÓ (pasaron más de 2 minutos sin subir foto)
+      // 2. NI DESPUÉS (pasaron los 2 minutos: bloqueado definitivamente)
       else if (curTotalSecs > slotEndSecs) {
         row.classList.remove('row-active-turn');
         row.classList.add('row-expired');
@@ -536,16 +514,15 @@ function filterUnitsForSlot(inputEl, selectId) {
           inlineTimer.textContent = '✕ Tiempo límite agotado (Subida bloqueada)';
           inlineTimer.className = 'slot-live-timer-tag text-muted';
         }
-        // Bloqueo total
+        // BLOQUEO INMEDIATO
+        if (unitSelect) unitSelect.disabled = true;
+        if (fileInput) fileInput.disabled = true;
         if (submitBtn) {
           submitBtn.disabled = true;
           submitBtn.title = 'El tiempo límite de 2 minutos para este turno ha expirado';
         }
-        if (fileInput) fileInput.disabled = true;
-        if (quickSearch) quickSearch.disabled = true;
-        if (unitSelect) unitSelect.disabled = true;
       }
-      // 3. EL TURNO ES A FUTURO (aún no llega la hora)
+      // 3. NI ANTES (aún no llega la hora: todo deshabilitado)
       else {
         row.classList.remove('row-active-turn');
         var diff = slotStartSecs - curTotalSecs;
@@ -563,12 +540,13 @@ function filterUnitsForSlot(inputEl, selectId) {
         if (inlineTimer) {
           var diffM = Math.floor(diff / 60);
           var diffS = diff % 60;
-          inlineTimer.textContent = 'Inicia a las ' + slotTime + ' (en ' + pad(diffM) + ':' + pad(diffS) + ')';
+          inlineTimer.textContent = '🔒 Habilita a las ' + slotTime + ' (en ' + pad(diffM) + ':' + pad(diffS) + ')';
           inlineTimer.className = 'slot-live-timer-tag text-muted';
         }
-        // Deshabilitado hasta que llegue su hora
-        if (submitBtn) submitBtn.disabled = true;
+        // BLOQUEO INMEDIATO
+        if (unitSelect) unitSelect.disabled = true;
         if (fileInput) fileInput.disabled = true;
+        if (submitBtn) submitBtn.disabled = true;
       }
     });
 
@@ -581,12 +559,12 @@ function filterUnitsForSlot(inputEl, selectId) {
         topDisplayEl.innerHTML =
           '<div class="active-slot-banner">' +
             '<span class="pulse-indicator"></span>' +
-            '<span class="active-slot-label">TURNO EN CURSO: <strong>' + activeSlot.time + '</strong></span>' +
+            '<span class="active-slot-label">TURNO ACTIVO EN CURSO: <strong>' + activeSlot.time + '</strong></span>' +
             '<div class="countdown-display ' + (isUrgent ? 'warning' : 'safe') + '">' +
               '<span class="countdown-digits">' + pad(aM) + '</span>:<span class="countdown-digits">' + pad(aS) + '</span>' +
             '</div>' +
             '<span class="countdown-note ' + (isUrgent ? 'pulse-text' : '') + '">' +
-              (isUrgent ? '⚠️ ¡Quedan menos de 30 segundos! Suba la foto ahora o se bloqueará el turno.' : 'Corren los 2 minutos: busque la unidad y suba la fotografía.') +
+              (isUrgent ? '⚠️ ¡Quedan menos de 30 segundos! Suba la foto ahora o se bloqueará el turno.' : 'Corren los 2 minutos: seleccione con la flecha la unidad que llegó y suba la foto.') +
             '</span>' +
           '</div>';
       } else if (nextUpcomingSlot) {
@@ -596,7 +574,7 @@ function filterUnitsForSlot(inputEl, selectId) {
           '<div class="waiting-slot-banner">' +
             '<span class="waiting-title">⏳ Próximo turno: <strong>' + nextUpcomingSlot.time + '</strong></span>' +
             '<div class="waiting-countdown-badge">Habilitación en: <strong>' + pad(nM) + ' min ' + pad(nS) + ' seg</strong></div>' +
-            '<small class="muted">Al marcar las ' + nextUpcomingSlot.time + ' (Hora Ecuador) se habilitará la subida por 2 minutos.</small>' +
+            '<small class="muted">A las ' + nextUpcomingSlot.time + ' se habilitará automáticamente la selección de unidad y subida de foto por 2 minutos.</small>' +
           '</div>';
       } else {
         topDisplayEl.innerHTML =

@@ -387,23 +387,13 @@ class Database:
             end_min = end_h * 60 + end_m
             if interval_minutes <= 0:
                 interval_minutes = 10
-            active_units = con.execute("SELECT id, socio_id FROM units WHERE status='Activa' ORDER BY code ASC").fetchall()
-            unit_idx = 0
-            num_units = len(active_units)
             while cur_min <= end_min:
                 hh = cur_min // 60
                 mm = cur_min % 60
                 time_str = f"{hh:02d}:{mm:02d}"
-                assigned_unit = None
-                assigned_socio = None
-                if num_units > 0:
-                    u = active_units[unit_idx % num_units]
-                    assigned_unit = u['id']
-                    assigned_socio = u['socio_id']
-                    unit_idx += 1
                 con.execute("""INSERT OR IGNORE INTO bus_arrival_slots (day_id, day, scheduled_time, unit_id, socio_id, status)
-                               VALUES (?, ?, ?, ?, ?, 'Pendiente')""",
-                            (day_id, day_str, time_str, assigned_unit, assigned_socio))
+                               VALUES (?, ?, ?, NULL, NULL, 'Pendiente')""",
+                            (day_id, day_str, time_str))
                 cur_min += interval_minutes
             day_row = con.execute("SELECT * FROM bus_arrival_days WHERE id=?", (day_id,)).fetchone()
         return dict(day_row)

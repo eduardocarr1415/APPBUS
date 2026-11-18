@@ -1415,7 +1415,7 @@ def test_llegadas_slots_generation_and_upload(environment):
         assert len(slots) == 67
         assert slots[0]['scheduled_time'] == '08:00'
         assert slots[-1]['scheduled_time'] == '19:00'
-        assert slots[0]['unit_id'] == uid_unit
+        assert slots[0]['unit_id'] is None
 
     target_slot = slots[0]
     token = csrf(c, '/perfil')
