@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <title>{% block title %}{{ settings.company_name|default('Compañía de Transportes Guaytacama') }}{% endblock %} · {{ settings.company_slogan|default('Buses Guaytacama') }}</title>
   <link rel="icon" href="{{ settings.favicon_url|default('/static/favicon.svg') }}" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=2026.11.18.2" defer>
+  <link rel="stylesheet" href="/static/style.css?v=2026.11.18.3" defer>
   <style id="dynamic-system-theme">
     :root {
       {% if settings.primary_color %}--primary-color: {{ settings.primary_color|css_value }};{% endif %}

@@ -1474,7 +1474,10 @@ def test_llegadas_finalizar_dia_generates_fines_and_void_restriction(environment
 
     login(c, 'admin')
     today_str = date.today().isoformat()
-    c.get(f'/llegadas?day={today_str}')
+    arrivals_page = c.get(f'/llegadas?day={today_str}')
+    assert arrivals_page.status_code == 200
+    assert 'type="submit" class="btn danger"' in arrivals_page.text
+    assert 'type="submit" class="btn danger" disabled' not in arrivals_page.text
 
     token = csrf(c, '/perfil')
     fin_res = c.post('/llegadas/finalizar', data={'_csrf': token, 'day': today_str}, follow_redirects=True)
@@ -1598,11 +1601,27 @@ def test_llegadas_past_pending_slots_are_expired(environment, monkeypatch):
     freeze_app_clock(monkeypatch, 10, 0)
     login(c, 'admin')
     past_day = (date.today() - timedelta(days=1)).isoformat()
+    future_day = (date.today() + timedelta(days=1)).isoformat()
 
     response = c.get(f'/llegadas?day={past_day}')
 
     assert response.status_code == 200
     assert 'No hay un turno activo en esta fecha pasada.' in response.text
+    assert '✕ Expirado' in response.text
+    assert '✕ Sin foto' not in response.text
+    assert 'type="button" class="btn danger" disabled' in response.text
+    future_response = c.get(f'/llegadas?day={future_day}')
+    assert future_response.status_code == 200
+    assert 'type="button" class="btn danger" disabled' in future_response.text
+    token = csrf(c, '/perfil')
+    for unavailable_day in (past_day, future_day):
+        finalize_response = c.post(
+            '/llegadas/finalizar',
+            data={'_csrf': token, 'day': unavailable_day}
+        )
+        assert finalize_response.status_code == 400
+        assert 'Solo se puede finalizar el control del día actual.' in finalize_response.text
+
     with db.connection() as con:
         statuses = con.execute(
             "SELECT s.status, COUNT(*) AS count FROM bus_arrival_slots s "
