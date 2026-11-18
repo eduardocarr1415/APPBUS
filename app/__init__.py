@@ -281,26 +281,38 @@ def create_app(db_path=None, testing=False):
         permitted(request)
         user=current(request)
         own=user['role']=='Socio'
-        condition=' WHERE socio_id=?' if own else ''
+        period=db.current_period()
+        raw_from=request.query_params.get('desde','').strip()
+        raw_to=request.query_params.get('hasta','').strip()
+        try:
+            desde=valid_date(raw_from).isoformat() if raw_from else period['starts']
+            hasta=valid_date(raw_to).isoformat() if raw_to else period['ends']
+        except ValueError as exc:
+            raise HTTPException(400,'El rango de fechas del dashboard no es válido.') from exc
+        if desde>hasta:
+            raise HTTPException(400,'La fecha inicial no puede ser posterior a la fecha final.')
+        rng=(desde,hasta)
+        own_sql=' AND socio_id=?' if own else ''
         args=(user['socio_id'],) if own else ()
         soc=db.one('SELECT COUNT(*) n FROM socios WHERE active=1')['n']
         units=db.one('SELECT COUNT(*) n FROM units')['n']
-        debts=db.one('SELECT COALESCE(SUM(amount_cents-paid_cents),0) n FROM debts'+condition,args)['n']
-        fines=db.one('SELECT COUNT(*) n FROM fines'+condition,args)['n']
-        meetings=db.one('SELECT COUNT(*) n FROM meetings WHERE meeting_date >=?', (date.today().isoformat(),))['n']
-        period=db.current_period()
-        inc=db.one('SELECT COALESCE(SUM(amount_cents),0) n FROM incomes WHERE period_id=?'+(' AND socio_id=?' if own else ''),(period['id'],)+args)['n']
-        pays=db.one('SELECT COALESCE(SUM(amount_cents),0) n FROM payments WHERE period_id=?'+(' AND socio_id=?' if own else ''),(period['id'],)+args)['n']
-        cards=[{'label':'Ingresos del periodo','value':fmt(inc+pays),'icon':'▥','color':'green'},
+        debts=db.one('SELECT COALESCE(SUM(amount_cents-paid_cents),0) n FROM debts WHERE substr(issued,1,10) BETWEEN ? AND ?'+own_sql,rng+args)['n']
+        fines=db.one('SELECT COUNT(*) n FROM fines WHERE substr(occurred_at,1,10) BETWEEN ? AND ?'+own_sql,rng+args)['n']
+        meetings=db.one('SELECT COUNT(*) n FROM meetings WHERE meeting_date BETWEEN ? AND ?',rng)['n']
+        inc=db.one('SELECT COALESCE(SUM(amount_cents),0) n FROM incomes WHERE day BETWEEN ? AND ?'+own_sql,rng+args)['n']
+        pays=db.one('SELECT COALESCE(SUM(amount_cents),0) n FROM payments WHERE day BETWEEN ? AND ?'+own_sql,rng+args)['n']
+        cards=[{'label':'Ingresos del rango','value':fmt(inc+pays),'icon':'▥','color':'green'},
                {'label':'Deudas pendientes','value':fmt(debts),'icon':'◇','color':'red'},
                {'label':'Multas registradas','value':fines,'icon':'⚒','color':'orange'},
-               {'label':'Reuniones próximas','value':meetings,'icon':'▤','color':'purple'}]
-        latest=db.all('SELECT created_at,entity,action,summary FROM audit ORDER BY id DESC LIMIT 8') if has(request,'auditoria.ver') else []
-        next_meetings=db.all('SELECT meeting_date,meeting_time,type,topic FROM meetings WHERE meeting_date>=? ORDER BY meeting_date LIMIT 5',(date.today().isoformat(),))
-        topdebts=db.all('SELECT s.name,COALESCE(SUM(d.amount_cents-d.paid_cents),0) pending FROM debts d JOIN socios s ON s.id=d.socio_id WHERE d.amount_cents>d.paid_cents'+(' AND d.socio_id=?' if own else '')+' GROUP BY s.id ORDER BY pending DESC LIMIT 6',args)
-        monthly=db.all('SELECT substr(day,1,7) month,SUM(amount_cents) amount FROM incomes WHERE period_id=?'+(' AND socio_id=?' if own else '')+' GROUP BY substr(day,1,7) ORDER BY month LIMIT 12',(period['id'],)+args)
+               {'label':'Reuniones del rango','value':meetings,'icon':'▤','color':'purple'}]
+        latest=db.all('SELECT created_at,entity,action,summary FROM audit WHERE substr(created_at,1,10) BETWEEN ? AND ? ORDER BY id DESC LIMIT 8',rng) if has(request,'auditoria.ver') else []
+        upcoming_from=max(desde,date.today().isoformat())
+        next_meetings=db.all('SELECT meeting_date,meeting_time,type,topic FROM meetings WHERE meeting_date BETWEEN ? AND ? ORDER BY meeting_date LIMIT 5',(upcoming_from,hasta))
+        topdebts=db.all('SELECT s.name,COALESCE(SUM(d.amount_cents-d.paid_cents),0) pending FROM debts d JOIN socios s ON s.id=d.socio_id WHERE d.amount_cents>d.paid_cents AND substr(d.issued,1,10) BETWEEN ? AND ?'+(' AND d.socio_id=?' if own else '')+' GROUP BY s.id ORDER BY pending DESC LIMIT 6',rng+args)
+        monthly=db.all('SELECT substr(day,1,7) month,SUM(amount_cents) amount FROM incomes WHERE day BETWEEN ? AND ?'+own_sql+' GROUP BY substr(day,1,7) ORDER BY month DESC LIMIT 12',rng+args)[::-1]
         return render(request,'dashboard.html',active='dashboard',cards=cards,topdebts=topdebts,latest=latest,
-                      next_meetings=next_meetings,monthly=monthly,socios_count=soc,units_count=units,fmt=fmt)
+                      next_meetings=next_meetings,monthly=monthly,socios_count=soc,units_count=units,fmt=fmt,
+                      desde=desde,hasta=hasta,is_default_range=(desde==period['starts'] and hasta==period['ends']))
 
     def get_socio_unit_data():
         socios = db.all("""

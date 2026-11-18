@@ -1343,3 +1343,23 @@ def test_every_password_field_gets_visibility_toggle(environment):
     login(c)
     assert 'type="password"' in c.get('/perfil').text
     assert 'type="password"' in c.get('/nuevo/usuarios').text
+
+def test_dashboard_date_range_filter(environment):
+    a,db,c,sid,other,aid,vid,sid_user=environment
+    login(c)
+    period=db.current_period()
+    with db.connection() as con:
+        con.execute("INSERT INTO incomes(period_id,socio_id,concept,category,amount_cents,method,day) VALUES(?,?,?,?,?,?,?)",
+                    (period['id'],sid,'Aporte','Aportes',12345,'Efectivo',period['starts']))
+    default=c.get('/')
+    assert default.status_code==200
+    assert f'name="desde" value="{period["starts"]}"' in default.text
+    assert f'name="hasta" value="{period["ends"]}"' in default.text
+    assert '123,45' in default.text or '123.45' in default.text
+    filtered=c.get('/',params={'desde':'1990-01-01','hasta':'1990-01-31'})
+    assert filtered.status_code==200
+    assert 'name="desde" value="1990-01-01"' in filtered.text
+    assert '123,45' not in filtered.text and '123.45' not in filtered.text
+    assert 'Restablecer' in filtered.text
+    assert c.get('/',params={'desde':'2020-02-01','hasta':'2020-01-01'}).status_code==400
+    assert c.get('/',params={'desde':'no-fecha'}).status_code==400
