@@ -4,6 +4,7 @@ import os
 import secrets
 import re
 import sqlite3
+import sys
 from datetime import date, timedelta, datetime, timezone
 
 ECUADOR_TZ = timezone(timedelta(hours=-5))
@@ -24,7 +25,12 @@ from .views import NAV,TABS,TITLES,SUBTITLES,modules
 from .forms import PERM_CREATE, spec, save, field_errors_for
 from .reports import fmt, build_rows, as_csv, as_pdf, REPORT_TYPES
 
-ROOT = Path(__file__).resolve().parent.parent
+# Data folder (instance/, copias_seguridad/). When packaged as .exe (PyInstaller), keep the
+# data next to the executable so it persists; templates/static stay bundled inside the exe.
+if getattr(sys, 'frozen', False):
+    ROOT = Path(sys.executable).resolve().parent
+else:
+    ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent/'templates'))
 TEMPLATES.env.filters['money'] = fmt
 

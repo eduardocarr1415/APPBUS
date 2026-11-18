@@ -6,3 +6,5 @@ instance/*.sqlite3*
 instance/uploads/
 copias_seguridad/
 .env
+build/
+dist/
