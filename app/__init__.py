@@ -4,7 +4,7 @@ import os
 import secrets
 import re
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from html import escape
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -47,6 +47,7 @@ def create_app(db_path=None, testing=False):
     app.state.db=db
     app.state.upload_dir=folder/'uploads'
     app.state.upload_dir.mkdir(exist_ok=True)
+    (app.state.upload_dir/'llegadas').mkdir(parents=True, exist_ok=True)
     app.state.testing=testing
     app.mount('/static', StaticFiles(directory=str(Path(__file__).resolve().parent/'static')),name='static')
 
@@ -683,6 +684,8 @@ def create_app(db_path=None, testing=False):
             fine=con.execute('SELECT * FROM fines WHERE id=?',(fine_id,)).fetchone()
             if not fine or fine['status']!='Pendiente' or fine['period_id']!=period['id']:
                 raise HTTPException(400,'Solo se pueden anular multas pendientes del periodo abierto.')
+            if fine['category'] == 'Atraso' and current(request)['role'] != 'Administrador':
+                raise HTTPException(403, 'Las multas por atraso en control de llegadas solo pueden ser anuladas por el Administrador.')
             debt=con.execute('SELECT * FROM debts WHERE fine_id=?',(fine_id,)).fetchone()
             if debt and debt['paid_cents']:
                 raise HTTPException(400,'No se puede anular una multa con pagos aplicados.')
@@ -1275,6 +1278,356 @@ def create_app(db_path=None, testing=False):
             Database.audit(con, current(request)['id'], 'Restablecer configuración', 'sistema', None,
                            "Se restauraron los colores y textos predeterminados de fábrica", ip=ip)
         return redir('/configuracion', 'Se han restaurado los valores predeterminados de fábrica.')
+
+    @app.get('/llegadas')
+    def llegadas_page(request: Request, day: str = ''):
+        permitted(request, 'llegadas.ver')
+        today = date.today()
+        today_str = today.isoformat()
+
+        target_day = day.strip() if day else today_str
+        try:
+            target_date = valid_date(target_day)
+            target_day = target_date.isoformat()
+        except ValueError:
+            target_day = today_str
+            target_date = today
+
+        prev_day = (target_date - timedelta(days=1)).isoformat()
+        next_day = (target_date + timedelta(days=1)).isoformat()
+        is_today = (target_day == today_str)
+
+        with db.connection() as con:
+            day_info = Database.ensure_arrival_day(con, target_day)
+
+            slots_rows = con.execute("""
+                SELECT s.*, u.code AS unit_code, sc.name AS socio_name, usr.full_name AS registered_by_name
+                FROM bus_arrival_slots s
+                LEFT JOIN units u ON s.unit_id = u.id
+                LEFT JOIN socios sc ON s.socio_id = sc.id
+                LEFT JOIN users usr ON s.registered_by = usr.id
+                WHERE s.day_id = ?
+                ORDER BY s.scheduled_time ASC
+            """, (day_info['id'],)).fetchall()
+            slots = [dict(r) for r in slots_rows]
+
+            units_rows = con.execute("""
+                SELECT u.id, u.code, sc.id AS socio_id, sc.name AS socio_name
+                FROM units u
+                LEFT JOIN socios sc ON u.socio_id = sc.id
+                WHERE u.status = 'Activa'
+                ORDER BY u.code ASC
+            """).fetchall()
+            active_units = [dict(r) for r in units_rows]
+
+        now = datetime.now()
+        current_time_str = now.strftime('%H:%M:%S')
+
+        active_slot = None
+        next_slot = None
+        seconds_left = 0
+
+        for s in slots:
+            try:
+                sh, sm = map(int, s['scheduled_time'].split(':'))
+                slot_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=sh, minute=sm)
+                limit_dt = slot_dt + timedelta(minutes=2)
+                s['scheduled_time_limit'] = limit_dt.strftime('%H:%M:%S')
+
+                if is_today:
+                    if slot_dt <= now <= limit_dt:
+                        active_slot = s
+                        seconds_left = max(0, int((limit_dt - now).total_seconds()))
+                    elif now < slot_dt and next_slot is None:
+                        next_slot = s
+            except Exception:
+                s['scheduled_time_limit'] = s['scheduled_time']
+
+        stats = {
+            'total': len(slots),
+            'registrados': sum(1 for s in slots if s['status'] == 'Registrado'),
+            'pendientes': sum(1 for s in slots if s['status'] == 'Pendiente'),
+            'expirados': sum(1 for s in slots if s['status'] == 'Expirado'),
+            'multados': sum(1 for s in slots if s['status'] == 'Multado'),
+        }
+
+        user_role = current(request)['role'] if current(request) else ''
+        return render(request, 'llegadas.html',
+                      active='llegadas',
+                      title=TITLES.get('llegadas', 'Llegada de buses'),
+                      subtitle=SUBTITLES.get('llegadas', 'Control operativo y registro fotográfico de llegada de unidades por turnos.'),
+                      day_info=day_info,
+                      slots=slots,
+                      active_units=active_units,
+                      current_day=target_day,
+                      prev_day=prev_day,
+                      next_day=next_day,
+                      today_str=today_str,
+                      is_today=is_today,
+                      current_time_str=current_time_str,
+                      active_slot=active_slot,
+                      next_slot=next_slot,
+                      seconds_left=seconds_left,
+                      stats=stats,
+                      can_edit=has(request, 'llegadas.editar'),
+                      can_finalize=has(request, 'llegadas.finalizar'),
+                      is_admin=(user_role == 'Administrador'))
+
+    @app.post('/llegadas/registrar')
+    async def llegadas_registrar(request: Request):
+        permitted(request, 'llegadas.editar')
+        f = await csrf_check(request)
+        ip = client_ip(request)
+        user = current(request)
+        uid = user['id']
+        is_admin = (user['role'] == 'Administrador')
+
+        slot_id = f.get('slot_id')
+        unit_id = f.get('unit_id')
+        day = f.get('day')
+        notes = (f.get('notes') or '').strip()
+        foto = f.get('foto')
+
+        if not slot_id or not str(slot_id).isdigit():
+            raise HTTPException(400, 'Identificador de turno no válido.')
+        slot_id = int(slot_id)
+
+        if not unit_id or not str(unit_id).isdigit():
+            raise HTTPException(400, 'Debe seleccionar una unidad para registrar la llegada.')
+        unit_id = int(unit_id)
+
+        if not foto or not hasattr(foto, 'filename') or not foto.filename:
+            raise HTTPException(400, 'Debe subir la fotografía de evidencia del bus.')
+
+        ext = Path(foto.filename).suffix.lower()
+        if ext not in ('.png', '.jpg', '.jpeg', '.webp'):
+            raise HTTPException(400, 'Formato de imagen no permitido. Suba JPG, PNG o WebP.')
+
+        data = await foto.read(5 * 1024 * 1024 + 1)
+        if len(data) > 5 * 1024 * 1024:
+            raise HTTPException(413, 'La fotografía no debe superar los 5 MB.')
+
+        is_png = data.startswith(b'\x89PNG\r\n\x1a\n')
+        is_jpg = data.startswith(b'\xff\xd8\xff')
+        is_webp = data.startswith(b'RIFF') and len(data) >= 12 and data[8:12] == b'WEBP'
+        if not (is_png or is_jpg or is_webp):
+            raise HTTPException(400, 'El archivo subido no es una imagen válida.')
+
+        with db.connection() as con:
+            slot = con.execute("SELECT s.*, d.status AS day_status FROM bus_arrival_slots s JOIN bus_arrival_days d ON s.day_id = d.id WHERE s.id=?", (slot_id,)).fetchone()
+            if not slot:
+                raise HTTPException(404, 'Turno no encontrado.')
+            if slot['day_status'] != 'Abierto':
+                raise HTTPException(400, 'El control de llegadas para este día ya fue finalizado.')
+            if slot['status'] == 'Registrado':
+                raise HTTPException(400, 'Este turno ya fue registrado anteriormente y no se puede modificar.')
+
+            unit_row = con.execute("SELECT id, code, socio_id FROM units WHERE id=?", (unit_id,)).fetchone()
+            if not unit_row:
+                raise HTTPException(400, 'Unidad no válida.')
+
+            now = datetime.now()
+            today_str = date.today().isoformat()
+            try:
+                sh, sm = map(int, slot['scheduled_time'].split(':'))
+                slot_date = date.fromisoformat(slot['day'])
+                slot_dt = datetime.combine(slot_date, datetime.min.time()).replace(hour=sh, minute=sm)
+                limit_dt = slot_dt + timedelta(minutes=2)
+
+                if not is_admin:
+                    if slot['day'] != today_str:
+                        raise HTTPException(400, 'Solo se pueden registrar llegadas en la fecha actual.')
+                    if now < slot_dt:
+                        raise HTTPException(400, f'El turno de las {slot["scheduled_time"]} aún no ha iniciado.')
+                    if now > limit_dt:
+                        raise HTTPException(400, f'El tiempo límite de 2 minutos para el turno {slot["scheduled_time"]} ha expirado. Ya no se permite subir la foto.')
+            except ValueError as ve:
+                raise HTTPException(400, str(ve))
+
+            llegadas_dir = app.state.upload_dir / 'llegadas'
+            llegadas_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = f"{slot['day']}_{slot['scheduled_time'].replace(':', '')}_{secrets.token_hex(8)}{ext}"
+            target_path = llegadas_dir / safe_name
+            target_path.write_bytes(data)
+
+            socio_id = unit_row['socio_id']
+            con.execute("""
+                UPDATE bus_arrival_slots
+                SET unit_id=?, socio_id=?, photo_path=?, photo_filename=?, registered_at=CURRENT_TIMESTAMP, registered_by=?, status='Registrado', notes=?
+                WHERE id=?
+            """, (unit_id, socio_id, safe_name, foto.filename, uid, notes, slot_id))
+
+            Database.audit(con, uid, 'Registrar llegada de bus', 'llegadas', slot_id,
+                           f"Llegada registrada Turno {slot['scheduled_time']} - Unidad {unit_row['code']} con evidencia fotográfica",
+                           ip=ip)
+
+        return redir(f'/llegadas?day={slot["day"]}', f"Llegada de la Unidad {unit_row['code']} registrada exitosamente para el turno {slot['scheduled_time']}.")
+
+    @app.get('/llegadas/foto/{slot_id}')
+    def llegadas_foto(request: Request, slot_id: int):
+        permitted(request, 'llegadas.ver')
+        slot = db.one("SELECT photo_path, photo_filename FROM bus_arrival_slots WHERE id=?", (slot_id,))
+        if not slot or not slot.get('photo_path'):
+            raise HTTPException(404, 'Fotografía no encontrada.')
+
+        file_path = (app.state.upload_dir / 'llegadas' / slot['photo_path']).resolve()
+        base_dir = (app.state.upload_dir / 'llegadas').resolve()
+        try:
+            file_path.relative_to(base_dir)
+        except ValueError:
+            raise HTTPException(400, 'Ruta no válida.')
+
+        if not file_path.is_file():
+            raise HTTPException(404, 'El archivo de la fotografía no existe en el servidor.')
+
+        media_types = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp'}
+        media_type = media_types.get(file_path.suffix.lower(), 'application/octet-stream')
+        return FileResponse(str(file_path), media_type=media_type, filename=slot.get('photo_filename') or file_path.name)
+
+    @app.post('/llegadas/finalizar')
+    async def llegadas_finalizar(request: Request):
+        permitted(request, 'llegadas.finalizar')
+        f = await csrf_check(request)
+        ip = client_ip(request)
+        uid = current(request)['id']
+        day = (f.get('day') or '').strip()
+
+        if not day:
+            raise HTTPException(400, 'Debe especificar el día a finalizar.')
+
+        with db.connection() as con:
+            day_row = con.execute("SELECT * FROM bus_arrival_days WHERE day=?", (day,)).fetchone()
+            if not day_row:
+                raise HTTPException(404, 'Día de control no encontrado.')
+            if day_row['status'] == 'Finalizado':
+                raise HTTPException(400, 'Este día ya ha sido finalizado.')
+
+            period = active_period_for_write(con)
+            fine_cycle = Database.ensure_fine_cycle(con, date.today())
+            fine_amount = day_row['fine_amount_cents'] or 500
+
+            unregistered = con.execute("""
+                SELECT s.*, u.code AS unit_code, u.socio_id AS current_socio_id, sc.name AS socio_name
+                FROM bus_arrival_slots s
+                LEFT JOIN units u ON s.unit_id = u.id
+                LEFT JOIN socios sc ON COALESCE(s.socio_id, u.socio_id) = sc.id
+                WHERE s.day_id = ? AND s.status != 'Registrado'
+                ORDER BY s.scheduled_time ASC
+            """, (day_row['id'],)).fetchall()
+
+            fines_count = 0
+            for slot in unregistered:
+                socio_id = slot['socio_id'] or slot['current_socio_id']
+                unit_id = slot['unit_id']
+                unit_code = slot['unit_code'] or (f"Unidad #{unit_id}" if unit_id else "Sin unidad")
+
+                if socio_id and fine_amount > 0:
+                    reason = f"Atraso en control de llegada (Turno {slot['scheduled_time']}) - Sin registro fotográfico"
+                    fine_id = con.execute("""
+                        INSERT INTO fines (period_id, socio_id, unit_id, category, reason, occurred_at, amount_cents, created_by, fine_cycle_id)
+                        VALUES (?, ?, ?, 'Atraso', ?, ?, ?, ?, ?)
+                    """, (period['id'], socio_id, unit_id, reason, day, fine_amount, uid, fine_cycle['id'])).lastrowid
+
+                    con.execute("""
+                        INSERT INTO debts (period_id, socio_id, concept, amount_cents, issued, fine_id, created_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (period['id'], socio_id, f"Multa: {reason}", fine_amount, day, fine_id, uid))
+
+                    con.execute("UPDATE bus_arrival_slots SET status='Multado', fine_id=? WHERE id=?", (fine_id, slot['id']))
+                    fines_count += 1
+
+                    Database.audit(con, uid, 'Sistema registró multa', 'multas', fine_id,
+                                   f"Sistema registró multa por atraso en turno {slot['scheduled_time']}: ${fine_amount/100:.2f} a {slot['socio_name']} ({unit_code})",
+                                   ip=ip)
+                else:
+                    con.execute("UPDATE bus_arrival_slots SET status='Expirado' WHERE id=?", (slot['id'],))
+
+            con.execute("UPDATE bus_arrival_days SET status='Finalizado', closed_at=CURRENT_TIMESTAMP, closed_by=? WHERE id=?",
+                        (uid, day_row['id']))
+
+            Database.audit(con, uid, 'Finalizar control de llegadas', 'llegadas', day_row['id'],
+                           f"Control de llegadas finalizado para {day}. Turnos no registrados: {len(unregistered)}, Multas automáticas por atraso generadas: {fines_count}",
+                           ip=ip)
+
+        return redir(f'/llegadas?day={day}', f"Control del día {day} finalizado correctamente. Se generaron {fines_count} multas por atraso con sus deudas asociadas.")
+
+    @app.post('/llegadas/configurar')
+    async def llegadas_configurar(request: Request):
+        permitted(request, 'llegadas.editar')
+        f = await csrf_check(request)
+        ip = client_ip(request)
+        uid = current(request)['id']
+
+        day = (f.get('day') or '').strip()
+        control_point = (f.get('control_point') or '').strip() or 'Punto 1 - Esquina Principal'
+        start_time = (f.get('start_time') or '').strip() or '08:00'
+        end_time = (f.get('end_time') or '').strip() or '19:00'
+        interval_raw = f.get('interval_minutes') or '10'
+        fine_amount_raw = f.get('fine_amount') or '5'
+
+        try:
+            interval_minutes = int(interval_raw)
+            if interval_minutes not in (5, 10, 15, 20, 30):
+                interval_minutes = 10
+        except ValueError:
+            interval_minutes = 10
+
+        try:
+            fine_amount_cents = int(round(float(fine_amount_raw) * 100))
+            if fine_amount_cents < 0:
+                fine_amount_cents = 500
+        except ValueError:
+            fine_amount_cents = 500
+
+        with db.connection() as con:
+            day_row = con.execute("SELECT * FROM bus_arrival_days WHERE day=?", (day,)).fetchone()
+            if not day_row:
+                raise HTTPException(404, 'Día no encontrado.')
+            if day_row['status'] == 'Finalizado':
+                raise HTTPException(400, 'No se puede reconfigurar un día ya finalizado.')
+
+            reg_count = con.execute("SELECT COUNT(*) AS c FROM bus_arrival_slots WHERE day_id=? AND status='Registrado'", (day_row['id'],)).fetchone()['c']
+
+            con.execute("""
+                UPDATE bus_arrival_days
+                SET control_point=?, start_time=?, end_time=?, interval_minutes=?, fine_amount_cents=?
+                WHERE id=?
+            """, (control_point, start_time, end_time, interval_minutes, fine_amount_cents, day_row['id']))
+
+            if reg_count == 0:
+                con.execute("DELETE FROM bus_arrival_slots WHERE day_id=?", (day_row['id'],))
+                try:
+                    start_h, start_m = map(int, start_time.split(':'))
+                    end_h, end_m = map(int, end_time.split(':'))
+                except Exception:
+                    start_h, start_m = 8, 0
+                    end_h, end_m = 19, 0
+                cur_min = start_h * 60 + start_m
+                end_min = end_h * 60 + end_m
+                active_units = con.execute("SELECT id, socio_id FROM units WHERE status='Activa' ORDER BY code ASC").fetchall()
+                unit_idx = 0
+                num_units = len(active_units)
+                while cur_min <= end_min:
+                    hh = cur_min // 60
+                    mm = cur_min % 60
+                    time_str = f"{hh:02d}:{mm:02d}"
+                    assigned_unit = None
+                    assigned_socio = None
+                    if num_units > 0:
+                        u = active_units[unit_idx % num_units]
+                        assigned_unit = u['id']
+                        assigned_socio = u['socio_id']
+                        unit_idx += 1
+                    con.execute("""INSERT INTO bus_arrival_slots (day_id, day, scheduled_time, unit_id, socio_id, status)
+                                   VALUES (?, ?, ?, ?, ?, 'Pendiente')""",
+                                (day_row['id'], day, time_str, assigned_unit, assigned_socio))
+                    cur_min += interval_minutes
+
+            Database.audit(con, uid, 'Configurar control de llegadas', 'llegadas', day_row['id'],
+                           f"Horarios de llegada configurados: {start_time} a {end_time} cada {interval_minutes} min en {control_point}",
+                           ip=ip)
+
+        return redir(f'/llegadas?day={day}', 'Configuración de control de llegadas guardada correctamente.')
 
     @app.get('/{module_name}')
     def module_page(request:Request,module_name:str,tab:str=''):

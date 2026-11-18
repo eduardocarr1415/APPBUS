@@ -3,7 +3,7 @@ import re
 import json
 import sqlite3
 from html import unescape
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from pathlib import Path
 
 import pytest
@@ -1363,3 +1363,176 @@ def test_dashboard_date_range_filter(environment):
     assert 'Restablecer' in filtered.text
     assert c.get('/',params={'desde':'2020-02-01','hasta':'2020-01-01'}).status_code==400
     assert c.get('/',params={'desde':'no-fecha'}).status_code==400
+
+def test_llegadas_access_and_permissions(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    with db.connection() as con:
+        sec_role = con.execute("SELECT id FROM roles WHERE name='Secretaría'").fetchone()['id']
+        con.execute("INSERT INTO users(username,full_name,password_hash,role_id) VALUES(?,?,?,?)",
+                    ('secretaria', 'Secretaria Prueba', password_hash('SecurePass123456'), sec_role))
+
+    # Socio cannot access (403)
+    login(c, 'socio')
+    assert c.get('/llegadas').status_code == 403
+
+    # Admin can access (200)
+    login(c, 'admin')
+    res_admin = c.get('/llegadas')
+    assert res_admin.status_code == 200
+    assert 'Llegada de buses' in res_admin.text
+    assert 'Turnos de control del día' in res_admin.text
+
+    # Vigilancia can access (200)
+    login(c, 'vigilante')
+    res_vig = c.get('/llegadas')
+    assert res_vig.status_code == 200
+    assert 'Llegada de buses' in res_vig.text
+
+    # Secretaria can access (200)
+    login(c, 'secretaria')
+    res_sec = c.get('/llegadas')
+    assert res_sec.status_code == 200
+    assert 'Llegada de buses' in res_sec.text
+
+def test_llegadas_slots_generation_and_upload(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    with db.connection() as con:
+        vid_veh = con.execute("INSERT INTO vehicles(plate,brand,model,year) VALUES(?,?,?,?)", ('PBC-1234', 'Hino', 'AK', 2022)).lastrowid
+        uid_unit = con.execute("INSERT INTO units(code,socio_id,vehicle_id,status) VALUES(?,?,?,?)", ('01', sid, vid_veh, 'Activa')).lastrowid
+
+    login(c, 'admin')
+    today_str = date.today().isoformat()
+    r = c.get(f'/llegadas?day={today_str}')
+    assert r.status_code == 200
+
+    with db.connection() as con:
+        day_row = con.execute("SELECT * FROM bus_arrival_days WHERE day=?", (today_str,)).fetchone()
+        assert day_row is not None
+        assert day_row['status'] == 'Abierto'
+        assert day_row['interval_minutes'] == 10
+
+        slots = con.execute("SELECT * FROM bus_arrival_slots WHERE day_id=? ORDER BY scheduled_time ASC", (day_row['id'],)).fetchall()
+        assert len(slots) == 67
+        assert slots[0]['scheduled_time'] == '08:00'
+        assert slots[-1]['scheduled_time'] == '19:00'
+        assert slots[0]['unit_id'] == uid_unit
+
+    target_slot = slots[0]
+    token = csrf(c, '/perfil')
+
+    png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+    files = {'foto': ('bus_01.png', png_data, 'image/png')}
+    data = {'_csrf': token, 'slot_id': target_slot['id'], 'unit_id': uid_unit, 'day': today_str, 'notes': 'Llegó puntual'}
+
+    upload_res = c.post('/llegadas/registrar', data=data, files=files, follow_redirects=True)
+    assert upload_res.status_code == 200
+    assert 'registrada exitosamente' in upload_res.text
+
+    with db.connection() as con:
+        updated_slot = con.execute("SELECT * FROM bus_arrival_slots WHERE id=?", (target_slot['id'],)).fetchone()
+        assert updated_slot['status'] == 'Registrado'
+        assert updated_slot['photo_path'] is not None
+
+    foto_res = c.get(f'/llegadas/foto/{target_slot["id"]}')
+    assert foto_res.status_code == 200
+    assert foto_res.headers['content-type'] == 'image/png'
+
+    token2 = csrf(c, '/perfil')
+    files2 = {'foto': ('bus_02.png', png_data, 'image/png')}
+    data2 = {'_csrf': token2, 'slot_id': target_slot['id'], 'unit_id': uid_unit, 'day': today_str}
+    fail_res = c.post('/llegadas/registrar', data=data2, files=files2)
+    assert fail_res.status_code == 400
+    assert 'no se puede modificar' in fail_res.text
+
+def test_llegadas_finalizar_dia_generates_fines_and_void_restriction(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    with db.connection() as con:
+        sec_role = con.execute("SELECT id FROM roles WHERE name='Secretaría'").fetchone()['id']
+        con.execute("INSERT INTO users(username,full_name,password_hash,role_id) VALUES(?,?,?,?)",
+                    ('secretaria2', 'Secretaria Dos', password_hash('SecurePass123456'), sec_role))
+        vid_veh = con.execute("INSERT INTO vehicles(plate,brand,model,year) VALUES(?,?,?,?)", ('PBC-5555', 'Hino', 'AK', 2022)).lastrowid
+        uid_unit = con.execute("INSERT INTO units(code,socio_id,vehicle_id,status) VALUES(?,?,?,?)", ('02', sid, vid_veh, 'Activa')).lastrowid
+
+    login(c, 'admin')
+    today_str = date.today().isoformat()
+    c.get(f'/llegadas?day={today_str}')
+
+    token = csrf(c, '/perfil')
+    fin_res = c.post('/llegadas/finalizar', data={'_csrf': token, 'day': today_str}, follow_redirects=True)
+    assert fin_res.status_code == 200
+    assert 'finalizado correctamente' in fin_res.text
+
+    with db.connection() as con:
+        day_row = con.execute("SELECT * FROM bus_arrival_days WHERE day=?", (today_str,)).fetchone()
+        assert day_row['status'] == 'Finalizado'
+
+        atraso_fines = con.execute("SELECT * FROM fines WHERE category='Atraso' AND occurred_at=?", (today_str,)).fetchall()
+        assert len(atraso_fines) > 0
+        fine_sample = atraso_fines[0]
+        assert fine_sample['status'] == 'Pendiente'
+        assert fine_sample['amount_cents'] == 500
+        assert 'Atraso en control de llegada' in fine_sample['reason']
+
+        debt_sample = con.execute("SELECT * FROM debts WHERE fine_id=?", (fine_sample['id'],)).fetchone()
+        assert debt_sample is not None
+        assert debt_sample['amount_cents'] == 500
+
+    # Non-admin (Vigilante has multas.editar, but cannot void an Atraso fine -> 403)
+    login(c, 'vigilante')
+    vig_token = csrf(c, '/perfil')
+    void_fail = c.post(f'/multas/{fine_sample["id"]}/anular', data={'_csrf': vig_token})
+    assert void_fail.status_code == 403
+    assert 'solo pueden ser anuladas por el Administrador' in void_fail.text
+
+    login(c, 'admin')
+    admin_token = csrf(c, '/perfil')
+    void_ok = c.post(f'/multas/{fine_sample["id"]}/anular', data={'_csrf': admin_token}, follow_redirects=True)
+    assert void_ok.status_code == 200
+    assert 'Multa anulada' in void_ok.text
+
+    with db.connection() as con:
+        voided = con.execute("SELECT status FROM fines WHERE id=?", (fine_sample['id'],)).fetchone()
+        assert voided['status'] == 'Anulada'
+
+def test_llegadas_2_minute_rule_and_config(environment):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    with db.connection() as con:
+        vid_veh = con.execute("INSERT INTO vehicles(plate,brand,model,year) VALUES(?,?,?,?)", ('PBC-9999', 'Hino', 'AK', 2022)).lastrowid
+        uid_unit = con.execute("INSERT INTO units(code,socio_id,vehicle_id,status) VALUES(?,?,?,?)", ('03', sid, vid_veh, 'Activa')).lastrowid
+
+    login(c, 'admin')
+    today_str = date.today().isoformat()
+    c.get(f'/llegadas?day={today_str}')
+
+    cfg_token = csrf(c, '/perfil')
+    cfg_res = c.post('/llegadas/configurar', data={
+        '_csrf': cfg_token,
+        'day': today_str,
+        'control_point': 'Esquina Parque',
+        'start_time': '08:00',
+        'end_time': '12:00',
+        'interval_minutes': '15',
+        'fine_amount': '10.00'
+    }, follow_redirects=True)
+    assert cfg_res.status_code == 200
+    assert 'guardada correctamente' in cfg_res.text
+
+    with db.connection() as con:
+        d = con.execute("SELECT * FROM bus_arrival_days WHERE day=?", (today_str,)).fetchone()
+        assert d['control_point'] == 'Esquina Parque'
+        assert d['interval_minutes'] == 15
+        assert d['fine_amount_cents'] == 1000
+        slots = con.execute("SELECT * FROM bus_arrival_slots WHERE day_id=?", (d['id'],)).fetchall()
+        assert len(slots) == 17
+
+    login(c, 'vigilante')
+    vig_token = csrf(c, '/perfil')
+    slot_08 = slots[0]
+    png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+    files = {'foto': ('bus_03.png', png_data, 'image/png')}
+
+    now = datetime.now()
+    if now.hour > 8 or (now.hour == 8 and now.minute > 2):
+        fail_time = c.post('/llegadas/registrar', data={'_csrf': vig_token, 'slot_id': slot_08['id'], 'unit_id': uid_unit, 'day': today_str}, files=files)
+        assert fail_time.status_code == 400
+        assert 'ha expirado' in fail_time.text

@@ -107,7 +107,13 @@
 {% if mod=='usuarios' and tab=='usuarios' and 'usuarios.editar' in perms %}<a class="mini-action" href="/usuario/{{ row[0] }}">Administrar</a><form action="/usuarios/{{ row[0] }}/estado" method="post"><input type="hidden" name="_csrf" value="{{ csrf }}"><button class="mini-action" type="submit" data-confirm="¿Cambiar el estado de acceso de este usuario?">Activar / Desactivar</button></form>{% endif %}
 {% if mod=='multas' and tab!='pagadas' and ('multas.editar' in perms or 'finanzas.editar' in perms) and row[-1]=='Pendiente' %}
 <a class="mini-action success" href="/multas/{{ row[0] }}/pagar">✓ Registrar abono</a>
-{% if 'multas.editar' in perms %}<form action="/multas/{{ row[0] }}/anular" method="post" style="display:inline-block;"><input type="hidden" name="_csrf" value="{{ csrf }}"><button class="mini-action" type="submit" data-confirm="¿Anular esta multa pendiente?">Anular</button></form>{% endif %}
+{% if 'multas.editar' in perms %}
+{% if 'Atraso' in row[5] and user.role != 'Administrador' %}
+<span class="badge" title="Las multas por atraso en control de llegadas solo pueden ser anuladas por el Administrador">🔒 Exclusivo Admin</span>
+{% else %}
+<form action="/multas/{{ row[0] }}/anular" method="post" style="display:inline-block;"><input type="hidden" name="_csrf" value="{{ csrf }}"><button class="mini-action" type="submit" data-confirm="¿Anular esta multa pendiente?">Anular</button></form>
+{% endif %}
+{% endif %}
 {% endif %}
 </td>{% endif %}
 </tr>{% else %}<tr><td colspan="{{ data.headers|length + 1 }}" class="empty">Todavía no existen registros en esta sección.</td></tr>{% endfor %}</tbody></table></div>{% include 'pagination.html' %}{% else %}<div class="empty">Todavía no existen traspasos registrados.</div>{% endif %}</section>

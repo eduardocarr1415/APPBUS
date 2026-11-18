@@ -2985,3 +2985,414 @@ body {
         justify-content: center
     }
 }
+
+/* ========================================================
+   MÓDULO: CONTROL DE LLEGADA DE BUSES
+   ======================================================== */
+.llegadas-nav-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 18px;
+    margin-bottom: 16px;
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+}
+
+.llegadas-date-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.llegadas-date-form input[type="date"] {
+    height: 34px;
+    padding: 4px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-weight: 600;
+    color: #1e293b;
+    font-size: 13px;
+}
+
+.llegadas-status-badge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.llegadas-point-tag {
+    font-weight: 600;
+    color: #334155;
+    background: #f1f5f9;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+/* Tarjeta del Temporizador y Control en Vivo */
+.llegadas-timer-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #cbd5e1;
+    border-left: 6px solid #2563eb;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+.timer-card-inner {
+    display: grid;
+    grid-template-columns: 1.2fr 1.6fr 1.4fr;
+    gap: 20px;
+    align-items: stretch;
+}
+
+.timer-col {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 10px;
+}
+
+.timer-col.countdown-col {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+}
+
+.timer-col-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #64748b;
+    margin-bottom: 6px;
+}
+
+.digital-clock {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 32px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: 2px;
+    line-height: 1.1;
+    margin-bottom: 6px;
+}
+
+.timer-subtext {
+    font-size: 12px;
+    color: #64748b;
+}
+
+.active-slot-banner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.active-slot-label {
+    font-size: 15px;
+    color: #1e3a8a;
+    font-weight: 700;
+}
+
+.countdown-display {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 38px;
+    font-weight: 900;
+    color: #dc2626;
+    letter-spacing: 3px;
+    line-height: 1;
+    text-shadow: 0 1px 2px rgba(220, 38, 38, 0.15);
+}
+
+.countdown-display.warning {
+    color: #ea580c;
+    animation: pulse-countdown 1s infinite alternate;
+}
+
+.countdown-display.safe {
+    color: #16a34a;
+}
+
+.countdown-note {
+    font-size: 12px;
+    font-weight: 600;
+    color: #dc2626;
+}
+
+.timer-banner-closed, .timer-banner-historic, .waiting-slot-banner {
+    font-size: 14px;
+    font-weight: 600;
+    color: #475569;
+    padding: 12px;
+}
+
+.timer-rules-list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 12px;
+    color: #475569;
+    line-height: 1.5;
+}
+
+.timer-rules-list li {
+    margin-bottom: 4px;
+}
+
+/* Indicadores pulsantes */
+.pulse-indicator {
+    width: 10px;
+    height: 10px;
+    background-color: #ef4444;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 0 rgba(239, 68, 68, 0.4);
+    animation: pulse-indicator 1.5s infinite;
+}
+
+@keyframes pulse-indicator {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+@keyframes pulse-countdown {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0.8; transform: scale(1.03); }
+}
+
+.pulse-pill {
+    animation: pulse-indicator 1.8s infinite;
+}
+
+.pulse-tag {
+    font-size: 10px;
+    font-weight: 800;
+    background: #ef4444;
+    color: #ffffff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-top: 3px;
+    animation: pulse-indicator 1.2s infinite;
+}
+
+/* Tabla de Llegadas */
+.llegadas-table .slot-time-text {
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.row-active-turn {
+    background-color: #f0f7ff !important;
+    border-left: 4px solid #2563eb;
+}
+
+.row-registered {
+    background-color: #fcfdfd;
+}
+
+.row-fined {
+    background-color: #fffaf0;
+}
+
+.unit-badge-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.unit-code-badge {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1e40af;
+}
+
+.slot-unit-select {
+    width: 100%;
+    min-width: 140px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 8px;
+}
+
+.bus-photo-thumb {
+    width: 64px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    transition: transform 0.15s ease;
+}
+
+.bus-photo-thumb:hover {
+    transform: scale(1.08);
+}
+
+.photo-preview-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.photo-thumb-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-decoration: none;
+}
+
+.thumb-zoom-icon {
+    font-size: 10px;
+    color: #2563eb;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.slot-upload-form {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.slot-file-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.slot-file-input {
+    font-size: 11px;
+    max-width: 155px;
+}
+
+.btn-registrar-llegada {
+    white-space: nowrap;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.slot-timer-inline .timer-countdown-tag {
+    font-size: 11px;
+    color: #ea580c;
+    font-weight: 700;
+}
+
+.slot-expired-box, .fine-slot-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* Modales */
+.llegadas-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(3px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.llegadas-modal .modal-dialog {
+    background: #ffffff;
+    border-radius: 14px;
+    box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.2);
+    width: 100%;
+    overflow: hidden;
+    animation: modal-fade-in 0.2s ease-out;
+}
+
+.photo-modal-dialog {
+    max-width: 650px;
+}
+
+.config-modal-dialog {
+    max-width: 520px;
+    padding: 24px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.modal-close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #64748b;
+    line-height: 1;
+    padding: 0 4px;
+}
+
+.modal-close-btn:hover {
+    color: #0f172a;
+}
+
+.photo-modal-body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    background: #f8fafc;
+}
+
+.modal-full-img {
+    max-width: 100%;
+    max-height: 65vh;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    object-fit: contain;
+}
+
+.modal-photo-info {
+    font-size: 13px;
+    color: #334155;
+    text-align: center;
+}
+
+@keyframes modal-fade-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 860px) {
+    .timer-card-inner {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+}

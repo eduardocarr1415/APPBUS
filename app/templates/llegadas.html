@@ -1,0 +1,407 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="heading-row">
+  <div>
+    <h1>🚏 {{ title }}</h1>
+    <p>{{ subtitle }}</p>
+  </div>
+  <div class="header-actions">
+    {% if can_edit and day_info.status == 'Abierto' %}
+    <button type="button" class="btn secondary" id="btn-open-config-modal" title="Configurar intervalo y horarios">⚙ Configurar horarios</button>
+    {% endif %}
+    {% if can_finalize and day_info.status == 'Abierto' %}
+    <form action="/llegadas/finalizar" method="post" style="display:inline-block;" id="form-finalizar-dia">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <input type="hidden" name="day" value="{{ current_day }}">
+      <button type="submit" class="btn danger" data-confirm="¿Está seguro de FINALIZAR el control del día {{ current_day }}? Todos los turnos sin foto registrada recibirán automáticamente una multa por atraso al socio responsable.">🏁 Finalizar día</button>
+    </form>
+    {% elif day_info.status == 'Finalizado' %}
+    <span class="pill green" style="font-size:14px;padding:8px 14px;">✓ Día Finalizado (Cerrado)</span>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Selector de Fecha y Estado del Día -->
+<div class="llegadas-nav-bar panel">
+  <div class="llegadas-date-nav">
+    <a href="/llegadas?day={{ prev_day }}" class="btn secondary small" title="Día anterior">◀ Anterior</a>
+    <form method="get" action="/llegadas" class="llegadas-date-form" id="llegadas-date-form">
+      <label for="llegadas-day-picker" class="sr-only">Seleccionar fecha</label>
+      <input type="date" id="llegadas-day-picker" name="day" value="{{ current_day }}" onchange="this.form.submit()">
+    </form>
+    <a href="/llegadas?day={{ next_day }}" class="btn secondary small" title="Día siguiente">Siguiente ▶</a>
+    <a href="/llegadas?day={{ today_str }}" class="btn {% if current_day == today_str %}primary{% else %}secondary{% endif %} small" title="Ir a la fecha de hoy">Hoy</a>
+  </div>
+  <div class="llegadas-status-badge">
+    <span class="llegadas-point-tag">📍 {{ day_info.control_point }}</span>
+    <span class="pill {% if day_info.status == 'Abierto' %}blue{% else %}green{% endif %}">
+      Estado: <strong>{{ day_info.status }}</strong>
+    </span>
+    {% if day_info.status == 'Finalizado' and day_info.closed_at %}
+    <small class="muted">Cerrado el {{ day_info.closed_at }}</small>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Tarjetas de Métricas -->
+<div class="metrics">
+  <article class="metric">
+    <span class="metric-icon blue">🚏</span>
+    <div>
+      <span class="metric-label">Total Turnos</span>
+      <strong>{{ stats.total }}</strong>
+    </div>
+  </article>
+  <article class="metric">
+    <span class="metric-icon green">📷</span>
+    <div>
+      <span class="metric-label">Registrados con Foto</span>
+      <strong>{{ stats.registrados }}</strong>
+    </div>
+  </article>
+  <article class="metric">
+    <span class="metric-icon orange">⏱</span>
+    <div>
+      <span class="metric-label">Pendientes</span>
+      <strong>{{ stats.pendientes }}</strong>
+    </div>
+  </article>
+  <article class="metric">
+    <span class="metric-icon red">⚒</span>
+    <div>
+      <span class="metric-label">Atrasos / Multados</span>
+      <strong>{{ stats.multados + stats.expirados }}</strong>
+    </div>
+  </article>
+</div>
+
+<!-- Temporizador y Control en Vivo -->
+<section class="panel llegadas-timer-card" id="llegadas-live-timer"
+         data-day="{{ current_day }}"
+         data-today="{{ today_str }}"
+         data-is-today="{{ 'true' if is_today else 'false' }}"
+         data-status="{{ day_info.status }}"
+         data-active-slot-time="{{ active_slot.scheduled_time if active_slot else '' }}"
+         data-seconds-left="{{ seconds_left }}">
+  <div class="timer-card-inner">
+    <div class="timer-col clock-col">
+      <span class="timer-col-label">Hora actual (Sistema)</span>
+      <div class="digital-clock" id="live-digital-clock">--:--:--</div>
+      <span class="timer-subtext">Intervalo: cada {{ day_info.interval_minutes }} min ({{ day_info.start_time }} a {{ day_info.end_time }})</span>
+    </div>
+    <div class="timer-col countdown-col">
+      <span class="timer-col-label">Control de Tiempo Límite</span>
+      {% if day_info.status == 'Finalizado' %}
+        <div class="timer-banner-closed">Control finalizado para esta fecha</div>
+      {% elif not is_today %}
+        <div class="timer-banner-historic">
+          {% if current_day < today_str %}
+            Fecha pasada · Consulta histórica
+          {% else %}
+            Fecha futura · Pendiente de inicio
+          {% endif %}
+        </div>
+      {% elif active_slot %}
+        <div class="active-slot-banner">
+          <span class="pulse-indicator"></span>
+          <span class="active-slot-label">TURNO ACTIVO: <strong>{{ active_slot.scheduled_time }}</strong></span>
+          {% if active_slot.status == 'Registrado' %}
+            <span class="badge green">✓ Ya registrado con foto</span>
+          {% else %}
+            <div class="countdown-display" id="main-countdown-display">
+              <span class="countdown-digits" id="timer-minutes">02</span>:<span class="countdown-digits" id="timer-seconds">00</span>
+            </div>
+            <span class="countdown-note">Tiempo máximo para subir foto: 2 minutos</span>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="waiting-slot-banner">
+          {% if next_slot %}
+            <span>⏳ Próximo turno: <strong>{{ next_slot.scheduled_time }}</strong></span>
+            <small class="muted" id="next-slot-countdown"></small>
+          {% else %}
+            <span>✅ Todos los turnos de hoy han concluido.</span>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+    <div class="timer-col instructions-col">
+      <span class="timer-col-label">Reglas del Control</span>
+      <ul class="timer-rules-list">
+        <li><strong>Foto obligatoria:</strong> Tomar foto al bus en el punto de control.</li>
+        <li><strong>Máximo 2 minutos:</strong> Pasados 2 minutos desde la hora, se bloquea la subida.</li>
+        <li><strong>Inmutable:</strong> Una vez subida la foto no se puede modificar.</li>
+        <li><strong>Finalizar día:</strong> Genera multa automática por atraso ($5.00) a quienes no tengan foto.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Tabla de Turnos de Llegada -->
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Turnos de control del día: {{ current_day }}</h2>
+      <p>Punto de control: <strong>{{ day_info.control_point }}</strong> · Turnos de {{ day_info.start_time }} a {{ day_info.end_time }}</p>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="asistencia-table llegadas-table" id="tabla-llegadas">
+      <thead>
+        <tr>
+          <th style="width:70px;text-align:center;">Turno</th>
+          <th style="width:170px;">Unidad</th>
+          <th>Socio / Conductor</th>
+          <th style="width:130px;text-align:center;">Estado</th>
+          <th style="width:260px;">Evidencia Fotográfica</th>
+          <th style="width:170px;text-align:center;">Registro</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in slots %}
+        {% set is_this_slot_active = (active_slot and active_slot.id == s.id) %}
+        {% set slot_expired = (is_today and current_time_str > s.scheduled_time_limit and s.status == 'Pendiente') or (current_day < today_str and s.status == 'Pendiente') %}
+        <tr id="slot-row-{{ s.id }}" class="llegada-row {% if is_this_slot_active %}row-active-turn{% elif s.status == 'Registrado' %}row-registered{% elif s.status == 'Multado' %}row-fined{% endif %}"
+            data-slot-id="{{ s.id }}"
+            data-time="{{ s.scheduled_time }}"
+            data-status="{{ s.status }}">
+          
+          <!-- Hora programada -->
+          <td style="text-align:center;">
+            <strong class="slot-time-text">{{ s.scheduled_time }}</strong>
+            {% if is_this_slot_active and s.status != 'Registrado' %}
+            <div class="slot-active-tag pulse-tag">EN CURSO</div>
+            {% endif %}
+          </td>
+
+          <!-- Unidad Asignada / Seleccionable -->
+          <td>
+            {% if s.status == 'Registrado' %}
+              <div class="unit-badge-wrap">
+                <strong class="unit-code-badge">🚌 {{ s.unit_code or 'Unidad #' ~ s.unit_id }}</strong>
+              </div>
+            {% elif s.status == 'Multado' or day_info.status == 'Finalizado' or slot_expired %}
+              <div>
+                <strong class="unit-code-badge {% if s.status == 'Multado' %}text-danger{% endif %}">
+                  🚌 {{ s.unit_code or 'Sin asignar' }}
+                </strong>
+              </div>
+            {% else %}
+              <!-- Dropdown editable para turno pendiente / activo -->
+              <div class="unit-select-wrap">
+                <select name="unit_id" form="form-slot-{{ s.id }}" class="asistencia-select slot-unit-select" required aria-label="Seleccionar unidad para turno {{ s.scheduled_time }}">
+                  <option value="" disabled {% if not s.unit_id %}selected{% endif %}>-- Elegir unidad --</option>
+                  {% for u in active_units %}
+                  <option value="{{ u.id }}" {% if s.unit_id == u.id %}selected{% endif %} data-socio="{{ u.socio_name or 'Sin socio' }}">
+                    {{ u.code }} ({{ u.socio_name or 'Sin socio' }})
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+            {% endif %}
+          </td>
+
+          <!-- Socio -->
+          <td>
+            <span class="slot-socio-name" id="socio-display-{{ s.id }}">
+              {{ s.socio_name or 'Sin socio asignado' }}
+            </span>
+          </td>
+
+          <!-- Estado -->
+          <td style="text-align:center;">
+            {% if s.status == 'Registrado' %}
+              <span class="pill green">✓ Registrado</span>
+            {% elif s.status == 'Multado' %}
+              <span class="pill red" title="Multa por atraso registrada">⚒ Multado</span>
+            {% elif is_this_slot_active %}
+              <span class="pill blue pulse-pill" id="pill-active-{{ s.id }}">⏱ Turno Activo</span>
+            {% elif slot_expired %}
+              <span class="pill orange">✕ Expirado</span>
+            {% else %}
+              <span class="pill gray">⏳ En espera</span>
+            {% endif %}
+          </td>
+
+          <!-- Evidencia Fotográfica -->
+          <td>
+            {% if s.status == 'Registrado' and s.photo_path %}
+              <div class="photo-preview-box">
+                <a href="javascript:void(0)" onclick="openPhotoModal('/llegadas/foto/{{ s.id }}', '{{ s.scheduled_time }}', '{{ s.unit_code }}', '{{ s.socio_name }}', '{{ s.registered_at }}')" class="photo-thumb-link" title="Click para ver foto ampliada">
+                  <img src="/llegadas/foto/{{ s.id }}" alt="Foto bus turno {{ s.scheduled_time }}" class="bus-photo-thumb" loading="lazy">
+                  <span class="thumb-zoom-icon">🔍 Ampliar</span>
+                </a>
+                <div class="photo-meta">
+                  <small class="text-success">✓ Foto verificada</small>
+                  {% if s.notes %}<small class="muted" title="{{ s.notes }}">{{ s.notes|truncate(25) }}</small>{% endif %}
+                </div>
+              </div>
+            {% elif day_info.status == 'Abierto' and can_edit and (is_this_slot_active or (is_admin and s.status == 'Pendiente')) %}
+              <!-- Formulario de subida de foto -->
+              <form action="/llegadas/registrar" method="post" enctype="multipart/form-data" id="form-slot-{{ s.id }}" class="slot-upload-form">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="slot_id" value="{{ s.id }}">
+                <input type="hidden" name="day" value="{{ current_day }}">
+                
+                <div class="slot-file-row">
+                  <label for="foto-{{ s.id }}" class="slot-file-label sr-only">Foto del bus</label>
+                  <input type="file" id="foto-{{ s.id }}" name="foto" accept="image/png, image/jpeg, image/jpg, image/webp" capture="environment" class="slot-file-input" required>
+                  <button type="submit" class="btn primary small btn-registrar-llegada" id="btn-submit-{{ s.id }}" title="Subir foto y confirmar llegada">
+                    📷 Registrar
+                  </button>
+                </div>
+                <div class="slot-timer-inline" id="inline-timer-{{ s.id }}">
+                  <small class="timer-countdown-tag">Tiempo máx: 2:00 min</small>
+                </div>
+              </form>
+            {% elif s.status == 'Multado' %}
+              <div class="fine-slot-info">
+                <span class="badge red">Multa por Atraso ($5.00)</span>
+                <small class="muted">Sin evidencia fotográfica</small>
+              </div>
+            {% elif slot_expired %}
+              <div class="slot-expired-box">
+                <span class="badge orange">✕ Tiempo límite agotado</span>
+                <small class="muted">Subida bloqueada</small>
+              </div>
+            {% else %}
+              <div class="slot-future-box">
+                <span class="muted">Disponible a las {{ s.scheduled_time }}</span>
+              </div>
+            {% endif %}
+          </td>
+
+          <!-- Registro / Auditoría -->
+          <td style="text-align:center;">
+            {% if s.registered_at %}
+              <small><strong>{{ s.registered_at }}</strong></small>
+              {% if s.registered_by_name %}
+              <br><small class="muted">Por: {{ s.registered_by_name }}</small>
+              {% endif %}
+            {% elif s.status == 'Multado' %}
+              <small class="text-danger">Multa generada al finalizar día</small>
+            {% else %}
+              <small class="muted">—</small>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="empty">No hay turnos configurados para este día. Utilice el botón "Configurar horarios" para generar los turnos.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Modal de Foto Ampliada (Lightbox) -->
+<div id="photo-modal" class="llegadas-modal" style="display:none;" onclick="if(event.target===this)closePhotoModal()">
+  <div class="modal-dialog photo-modal-dialog">
+    <div class="modal-header">
+      <h3 id="modal-photo-title">Foto de Llegada</h3>
+      <button type="button" class="modal-close-btn" onclick="closePhotoModal()" aria-label="Cerrar modal">&times;</button>
+    </div>
+    <div class="modal-body photo-modal-body">
+      <img id="modal-photo-img" src="" alt="Foto de bus" class="modal-full-img">
+      <div class="modal-photo-info" id="modal-photo-info"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de Configuración de Horarios (Solo Admin / Secretaría) -->
+{% if can_edit %}
+<div id="config-modal" class="llegadas-modal" style="display:none;" onclick="if(event.target===this)closeConfigModal()">
+  <div class="modal-dialog config-modal-dialog">
+    <div class="modal-header">
+      <h3>⚙ Configuración de Control de Llegadas</h3>
+      <button type="button" class="modal-close-btn" onclick="closeConfigModal()" aria-label="Cerrar modal">&times;</button>
+    </div>
+    <form action="/llegadas/configurar" method="post" class="form-stack">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <input type="hidden" name="day" value="{{ current_day }}">
+
+      <div class="field">
+        <label for="cfg-punto"><b>Punto de Control</b></label>
+        <input type="text" id="cfg-punto" name="control_point" value="{{ day_info.control_point }}" required placeholder="Ej. Punto 1 - Esquina Principal">
+      </div>
+
+      <div class="field-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="field">
+          <label for="cfg-inicio"><b>Hora Inicio</b></label>
+          <input type="time" id="cfg-inicio" name="start_time" value="{{ day_info.start_time }}" required>
+        </div>
+        <div class="field">
+          <label for="cfg-fin"><b>Hora Fin</b></label>
+          <input type="time" id="cfg-fin" name="end_time" value="{{ day_info.end_time }}" required>
+        </div>
+      </div>
+
+      <div class="field-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="field">
+          <label for="cfg-intervalo"><b>Intervalo entre turnos (minutos)</b></label>
+          <select id="cfg-intervalo" name="interval_minutes" class="asistencia-select" required>
+            <option value="5" {% if day_info.interval_minutes == 5 %}selected{% endif %}>Cada 5 minutos</option>
+            <option value="10" {% if day_info.interval_minutes == 10 %}selected{% endif %}>Cada 10 minutos (Estándar)</option>
+            <option value="15" {% if day_info.interval_minutes == 15 %}selected{% endif %}>Cada 15 minutos</option>
+            <option value="20" {% if day_info.interval_minutes == 20 %}selected{% endif %}>Cada 20 minutos</option>
+            <option value="30" {% if day_info.interval_minutes == 30 %}selected{% endif %}>Cada 30 minutos</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="cfg-multa"><b>Valor Multa por Atraso ($)</b></label>
+          <input type="number" id="cfg-multa" name="fine_amount" min="1" step="0.50" value="{{ (day_info.fine_amount_cents / 100)|round(2) }}" required>
+        </div>
+      </div>
+
+      <div class="notice info" style="margin-top:12px;">
+        Al modificar los horarios o intervalo en un día sin registros, los turnos se recalculan automáticamente manteniendo la rotación de unidades.
+      </div>
+
+      <div class="form-actions" style="margin-top:16px;display:flex;justify-content:flex-end;gap:10px;">
+        <button type="button" class="btn secondary" onclick="closeConfigModal()">Cancelar</button>
+        <button type="submit" class="btn primary">Guardar configuración</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<script>
+// Scripts específicos para la interactividad de Llegadas de Buses
+function openPhotoModal(src, time, unit, socio, regAt) {
+  var modal = document.getElementById('photo-modal');
+  var img = document.getElementById('modal-photo-img');
+  var info = document.getElementById('modal-photo-info');
+  img.src = src;
+  info.innerHTML = '<strong>Turno: ' + time + '</strong> · Unidad: <strong>' + (unit || 'Sin asignar') + '</strong> · Socio: ' + (socio || 'N/A') + '<br><small class="muted">Registrado: ' + (regAt || '') + '</small>';
+  modal.style.display = 'flex';
+}
+function closePhotoModal() {
+  var modal = document.getElementById('photo-modal');
+  if (modal) modal.style.display = 'none';
+}
+function openConfigModal() {
+  var modal = document.getElementById('config-modal');
+  if (modal) modal.style.display = 'flex';
+}
+function closeConfigModal() {
+  var modal = document.getElementById('config-modal');
+  if (modal) modal.style.display = 'none';
+}
+document.getElementById('btn-open-config-modal')?.addEventListener('click', openConfigModal);
+
+// Actualizar socio al cambiar el dropdown de unidad en una fila
+document.querySelectorAll('.slot-unit-select').forEach(function(sel) {
+  sel.addEventListener('change', function() {
+    var opt = this.options[this.selectedIndex];
+    var socioName = opt.getAttribute('data-socio') || 'Sin socio';
+    var row = this.closest('tr');
+    var disp = row ? row.querySelector('.slot-socio-name') : null;
+    if (disp) disp.textContent = socioName;
+  });
+});
+</script>
+{% endblock %}

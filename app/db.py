@@ -20,12 +20,15 @@ PERMISSIONS = {
     'usuarios.ver': 'Consultar usuarios', 'usuarios.editar': 'Crear y administrar usuarios',
     'roles.editar': 'Administrar roles y permisos', 'auditoria.ver': 'Consultar registro de auditoría',
     'configuracion.ver': 'Configurar y parametrizar página',
+    'llegadas.ver': 'Consultar control de llegada de buses',
+    'llegadas.editar': 'Registrar llegadas y fotos de buses',
+    'llegadas.finalizar': 'Finalizar control diario y generar multas automáticas',
 }
 ROLES = {
     'Administrador': list(PERMISSIONS),
-    'Secretaría': ['socios.ver','socios.crear','actas.ver','actas.editar','unidades.ver','reportes.ver','reportes.asistencia','reportes.unidades'],
+    'Secretaría': ['socios.ver','socios.crear','actas.ver','actas.editar','unidades.ver','reportes.ver','reportes.asistencia','reportes.unidades','llegadas.ver','llegadas.editar','llegadas.finalizar'],
     'Tesorería': ['socios.ver','finanzas.ver','finanzas.editar','multas.ver','unidades.ver','reportes.ver','reportes.finanzas','reportes.deudas','reportes.multas'],
-    'Vigilancia': ['socios.ver','multas.ver','multas.editar','unidades.ver','reportes.ver','reportes.multas','reportes.unidades'],
+    'Vigilancia': ['socios.ver','multas.ver','multas.editar','unidades.ver','reportes.ver','reportes.multas','reportes.unidades','llegadas.ver','llegadas.editar','llegadas.finalizar'],
     'Socio': ['actas.ver','finanzas.ver','multas.ver','unidades.ver'],
 }
 DDL = """
@@ -168,12 +171,43 @@ CREATE TABLE IF NOT EXISTS system_settings (
  key TEXT PRIMARY KEY,
  value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS bus_arrival_days (
+ id INTEGER PRIMARY KEY,
+ day TEXT NOT NULL UNIQUE,
+ status TEXT NOT NULL DEFAULT 'Abierto' CHECK(status IN ('Abierto', 'Finalizado')),
+ interval_minutes INTEGER NOT NULL DEFAULT 10 CHECK(interval_minutes > 0),
+ start_time TEXT NOT NULL DEFAULT '08:00',
+ end_time TEXT NOT NULL DEFAULT '19:00',
+ control_point TEXT NOT NULL DEFAULT 'Punto 1 - Esquina Principal',
+ fine_amount_cents INTEGER NOT NULL DEFAULT 500 CHECK(fine_amount_cents >= 0),
+ closed_at TEXT,
+ closed_by INTEGER REFERENCES users(id),
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS bus_arrival_slots (
+ id INTEGER PRIMARY KEY,
+ day_id INTEGER NOT NULL REFERENCES bus_arrival_days(id) ON DELETE CASCADE,
+ day TEXT NOT NULL,
+ scheduled_time TEXT NOT NULL,
+ unit_id INTEGER REFERENCES units(id),
+ socio_id INTEGER REFERENCES socios(id),
+ photo_path TEXT,
+ photo_filename TEXT,
+ registered_at TEXT,
+ registered_by INTEGER REFERENCES users(id),
+ status TEXT NOT NULL DEFAULT 'Pendiente' CHECK(status IN ('Pendiente', 'Registrado', 'Expirado', 'Multado')),
+ fine_id INTEGER UNIQUE REFERENCES fines(id),
+ notes TEXT DEFAULT '',
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE(day, scheduled_time)
+);
 CREATE INDEX IF NOT EXISTS idx_incomes_period ON incomes(period_id,day);
 CREATE INDEX IF NOT EXISTS idx_expenses_period ON expenses(period_id,day);
 CREATE INDEX IF NOT EXISTS idx_payments_period ON payments(period_id,day);
 CREATE INDEX IF NOT EXISTS idx_debts_socio ON debts(socio_id);
 CREATE INDEX IF NOT EXISTS idx_fines_period ON fines(period_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit(created_at);
+CREATE INDEX IF NOT EXISTS idx_bus_arrival_slots_day ON bus_arrival_slots(day, scheduled_time);
 """
 
 class Database:
@@ -222,6 +256,16 @@ class Database:
             admin_row = con.execute("SELECT id FROM roles WHERE name='Administrador'").fetchone()
             if admin_row:
                 con.execute("INSERT OR IGNORE INTO role_permissions(role_id, permission) VALUES(?, 'configuracion.ver')", (admin_row['id'],))
+                for p in ['llegadas.ver', 'llegadas.editar', 'llegadas.finalizar']:
+                    con.execute("INSERT OR IGNORE INTO role_permissions(role_id, permission) VALUES(?, ?)", (admin_row['id'], p))
+            sec_row = con.execute("SELECT id FROM roles WHERE name='Secretaría'").fetchone()
+            if sec_row:
+                for p in ['llegadas.ver', 'llegadas.editar', 'llegadas.finalizar']:
+                    con.execute("INSERT OR IGNORE INTO role_permissions(role_id, permission) VALUES(?, ?)", (sec_row['id'], p))
+            vig_row = con.execute("SELECT id FROM roles WHERE name='Vigilancia'").fetchone()
+            if vig_row:
+                for p in ['llegadas.ver', 'llegadas.editar', 'llegadas.finalizar']:
+                    con.execute("INSERT OR IGNORE INTO role_permissions(role_id, permission) VALUES(?, ?)", (vig_row['id'], p))
             self.ensure_period(con, date.today())
             self.migrate_fine_cycles(con)
             self.migrate_weekly_marks(con)
@@ -324,6 +368,45 @@ class Database:
         label=year if count==0 else f'{year}-{count+1}'
         cycle_id=con.execute('INSERT INTO fine_cycles(label,starts) VALUES(?,?)',(label,start)).lastrowid
         return dict(con.execute('SELECT * FROM fine_cycles WHERE id=?',(cycle_id,)).fetchone())
+
+    @staticmethod
+    def ensure_arrival_day(con, day_str, interval_minutes=10, start_time='08:00', end_time='19:00', control_point='Punto 1 - Esquina Principal', fine_amount_cents=500):
+        day_row = con.execute("SELECT * FROM bus_arrival_days WHERE day=?", (day_str,)).fetchone()
+        if not day_row:
+            con.execute("""INSERT INTO bus_arrival_days (day, status, interval_minutes, start_time, end_time, control_point, fine_amount_cents)
+                           VALUES (?, 'Abierto', ?, ?, ?, ?, ?)""",
+                        (day_str, interval_minutes, start_time, end_time, control_point, fine_amount_cents))
+            day_id = con.execute("SELECT id FROM bus_arrival_days WHERE day=?", (day_str,)).fetchone()['id']
+            try:
+                start_h, start_m = map(int, start_time.split(':'))
+                end_h, end_m = map(int, end_time.split(':'))
+            except Exception:
+                start_h, start_m = 8, 0
+                end_h, end_m = 19, 0
+            cur_min = start_h * 60 + start_m
+            end_min = end_h * 60 + end_m
+            if interval_minutes <= 0:
+                interval_minutes = 10
+            active_units = con.execute("SELECT id, socio_id FROM units WHERE status='Activa' ORDER BY code ASC").fetchall()
+            unit_idx = 0
+            num_units = len(active_units)
+            while cur_min <= end_min:
+                hh = cur_min // 60
+                mm = cur_min % 60
+                time_str = f"{hh:02d}:{mm:02d}"
+                assigned_unit = None
+                assigned_socio = None
+                if num_units > 0:
+                    u = active_units[unit_idx % num_units]
+                    assigned_unit = u['id']
+                    assigned_socio = u['socio_id']
+                    unit_idx += 1
+                con.execute("""INSERT OR IGNORE INTO bus_arrival_slots (day_id, day, scheduled_time, unit_id, socio_id, status)
+                               VALUES (?, ?, ?, ?, ?, 'Pendiente')""",
+                            (day_id, day_str, time_str, assigned_unit, assigned_socio))
+                cur_min += interval_minutes
+            day_row = con.execute("SELECT * FROM bus_arrival_days WHERE id=?", (day_id,)).fetchone()
+        return dict(day_row)
 
     def current_period(self):
         with self.connection() as con:
