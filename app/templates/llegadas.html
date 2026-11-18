@@ -123,7 +123,6 @@
           {% if next_slot %}
             <span>⏳ Próximo turno: <strong>{{ next_slot.scheduled_time }}</strong></span>
             <small class="muted" id="next-slot-countdown">En espera de la hora programada</small>
-          </div>
           {% else %}
             <span>✅ Todos los turnos de hoy han concluido.</span>
           {% endif %}
@@ -142,135 +141,172 @@
   </div>
 </section>
 
-<!-- Tabla de Turnos de Llegada -->
-<section class="panel">
+<section class="panel" id="turno-actual">
   <div class="panel-heading">
     <div>
-      <h2>Turnos de control del día: {{ current_day }}</h2>
-      <p>Punto de control: <strong>{{ day_info.control_point }}</strong> · Turnos de {{ day_info.start_time }} a {{ day_info.end_time }}</p>
+      <h2>Turno actual para subir</h2>
+      <p>Solo se muestra el turno activo o el próximo que debe registrarse.</p>
     </div>
   </div>
-
+  {% if operational_slot %}
   <div class="table-wrap">
-    <table class="asistencia-table llegadas-table" id="tabla-llegadas">
+    <table class="asistencia-table llegadas-table">
       <thead>
         <tr>
-          <th style="width:80px;text-align:center;">Turno</th>
-          <th style="width:200px;">Unidad</th>
+          <th style="width:90px;text-align:center;">Turno</th>
+          <th style="width:210px;">Unidad</th>
           <th>Socio / Conductor</th>
           <th style="width:130px;text-align:center;">Estado</th>
-          <th style="width:290px;">Evidencia Fotográfica</th>
-          <th style="width:160px;text-align:center;">Registro</th>
+          <th style="width:290px;">Registro fotográfico</th>
         </tr>
       </thead>
       <tbody>
-        {% for s in slots %}
+        {% set s = operational_slot %}
         <tr id="slot-row-{{ s.id }}" class="llegada-row {% if s.status == 'Registrado' %}row-registered{% elif s.status == 'Multado' %}row-fined{% endif %}"
             data-slot-id="{{ s.id }}"
             data-time="{{ s.scheduled_time }}"
-            data-status="{{ s.status }}">
-          
-          <!-- Hora programada -->
+            data-status="{{ s.status }}"
+            data-operational="true">
           <td style="text-align:center;">
             <strong class="slot-time-text">{{ s.scheduled_time }}</strong>
             <div class="slot-time-tag-wrap" id="time-tag-wrap-{{ s.id }}"></div>
           </td>
-
-          <!-- Unidad / Flecha de selección -->
           <td>
-            {% if s.status == 'Registrado' %}
-              <div class="unit-badge-wrap">
-                <strong class="unit-code-badge">🚌 {{ s.unit_code or 'Unidad #' ~ s.unit_id }}</strong>
-              </div>
-            {% elif s.status == 'Multado' %}
-              <div>
-                <strong class="unit-code-badge text-danger">
-                  🚌 {{ s.unit_code or 'Sin registro' }}
-                </strong>
-              </div>
-            {% elif day_info.status == 'Finalizado' %}
-              <span class="muted">—</span>
-            {% else %}
-              <!-- Flecha de unidad para seleccionar cuál fue -->
+            {% if s.status == 'Registrado' or s.status == 'Multado' %}
+              <strong class="unit-code-badge">🚌 {{ s.unit_code or 'Unidad #' ~ s.unit_id }}</strong>
+            {% elif day_info.status == 'Abierto' and can_edit %}
               <div class="unit-select-wrap">
                 <select id="unit-select-{{ s.id }}" name="unit_id" form="form-slot-{{ s.id }}" class="asistencia-select slot-unit-select" required disabled aria-label="Seleccionar unidad para turno {{ s.scheduled_time }}">
-                  <option value="" disabled selected>-- Seleccionar unidad ▼ --</option>
+                  <option value="" disabled selected>-- Seleccionar unidad --</option>
                   {% for u in active_units %}
-                  <option value="{{ u.id }}" data-socio="{{ u.socio_name or 'Sin socio' }}">
-                    Unidad {{ u.code }}
-                  </option>
+                  <option value="{{ u.id }}" data-socio="{{ u.socio_name or 'Sin socio' }}">Unidad {{ u.code }}</option>
                   {% endfor %}
                 </select>
               </div>
+            {% else %}
+              <span class="muted">—</span>
             {% endif %}
           </td>
-
-          <!-- Socio / Conductor -->
-          <td>
-            <span class="slot-socio-name" id="socio-display-{{ s.id }}">
-              {{ s.socio_name or '—' }}
-            </span>
-          </td>
-
-          <!-- Estado -->
+          <td><span class="slot-socio-name" id="socio-display-{{ s.id }}">{{ s.socio_name or '—' }}</span></td>
           <td style="text-align:center;">
             {% if s.status == 'Registrado' %}
               <span class="pill green slot-status-pill">✓ Registrado</span>
             {% elif s.status == 'Multado' %}
-              <span class="pill red slot-status-pill" title="Multa por atraso registrada">⚒ Multado</span>
+              <span class="pill red slot-status-pill">⚒ Multado</span>
+            {% elif s.status == 'Expirado' %}
+              <span class="pill orange slot-status-pill">✕ Expirado</span>
             {% else %}
               <span class="pill gray slot-status-pill" id="pill-slot-{{ s.id }}">⏳ En espera</span>
             {% endif %}
           </td>
-
-          <!-- Evidencia Fotográfica -->
           <td>
             {% if s.status == 'Registrado' and s.photo_path %}
               <div class="photo-preview-box">
-                <a href="javascript:void(0)" onclick="openPhotoModal('/llegadas/foto/{{ s.id }}', '{{ s.scheduled_time }}', '{{ s.unit_code }}', '{{ s.socio_name }}', '{{ s.registered_at }}')" class="photo-thumb-link" title="Click para ver foto ampliada">
+                <a href="javascript:void(0)" onclick="openPhotoModal('/llegadas/foto/{{ s.id }}', '{{ s.scheduled_time }}', '{{ s.unit_code }}', '{{ s.socio_name }}', '{{ s.registered_at }}')" class="photo-thumb-link" title="Ver foto ampliada">
                   <img src="/llegadas/foto/{{ s.id }}" alt="Foto bus turno {{ s.scheduled_time }}" class="bus-photo-thumb" loading="lazy">
                   <span class="thumb-zoom-icon">🔍 Ampliar</span>
                 </a>
-                <div class="photo-meta">
-                  <small class="text-success">✓ Foto verificada</small>
-                  <span class="badge gray">🔒 Inmutable</span>
-                </div>
               </div>
             {% elif day_info.status == 'Abierto' and can_edit and s.status == 'Pendiente' %}
-              <!-- Formulario de subida de foto: SOLO se habilita cuando llega esa hora (por 2 min) -->
               <form action="/llegadas/registrar" method="post" enctype="multipart/form-data" id="form-slot-{{ s.id }}" class="slot-upload-form" data-slot-id="{{ s.id }}" data-time="{{ s.scheduled_time }}">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <input type="hidden" name="slot_id" value="{{ s.id }}">
                 <input type="hidden" name="day" value="{{ current_day }}">
-
                 <div class="slot-file-row">
                   <label for="foto-{{ s.id }}" class="slot-file-label sr-only">Foto del bus</label>
                   <input type="file" id="foto-{{ s.id }}" name="foto" accept="image/png, image/jpeg, image/jpg, image/webp" capture="environment" class="slot-file-input" required disabled>
-                  <button type="submit" class="btn primary small btn-registrar-llegada" id="btn-submit-{{ s.id }}" title="Solo se habilita al llegar la hora {{ s.scheduled_time }}" disabled>
-                    📷 Registrar
-                  </button>
+                  <button type="submit" class="btn primary small btn-registrar-llegada" id="btn-submit-{{ s.id }}" title="Solo se habilita al llegar la hora {{ s.scheduled_time }}" disabled>📷 Registrar</button>
                 </div>
                 <div class="slot-timer-inline" id="inline-timer-{{ s.id }}">
                   <small class="slot-live-timer-tag" id="timer-tag-{{ s.id }}">🔒 Disponible a las {{ s.scheduled_time }}</small>
                 </div>
               </form>
             {% elif s.status == 'Multado' %}
-              <div class="fine-slot-info">
-                <span class="badge red">Multa por Atraso ($5.00)</span>
-                <small class="muted">Sin evidencia fotográfica</small>
-              </div>
+              <span class="badge red">Multa por atraso</span>
+            {% elif s.status == 'Expirado' %}
+              <span class="badge orange">Tiempo agotado</span>
             {% else %}
-              <div class="slot-expired-box">
-                <span class="badge orange">✕ Tiempo agotado</span>
-                <small class="muted">Subida bloqueada</small>
-              </div>
+              <span class="muted">Sin permiso para registrar</span>
             {% endif %}
           </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">
+    {% if current_day < today_str %}
+      No hay un turno activo en esta fecha pasada. Consulta el registro total.
+    {% elif current_day > today_str %}
+      No hay un turno activo todavía para esta fecha futura.
+    {% else %}
+      No hay turnos pendientes de registro en este momento.
+    {% endif %}
+  </p>
+  {% endif %}
+</section>
 
-          <!-- Registro / Auditoría -->
+<!-- Registro total de turnos -->
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Registro total de turnos</h2>
+      <p>Turnos de control del día {{ current_day }} · Punto de control: <strong>{{ day_info.control_point }}</strong>. El registro es de solo lectura y está paginado.</p>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="asistencia-table llegadas-table" id="tabla-historial-llegadas" data-client-list>
+      <thead>
+        <tr>
+          <th style="width:80px;text-align:center;">Turno</th>
+          <th style="width:150px;">Unidad</th>
+          <th>Socio / Conductor</th>
+          <th style="width:130px;text-align:center;">Estado</th>
+          <th style="width:180px;">Foto</th>
+          <th style="width:160px;text-align:center;" title="Hora local de Ecuador">Registro</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in slots %}
+        <tr class="registro-llegada-row {% if s.status == 'Registrado' %}row-registered{% elif s.status == 'Multado' %}row-fined{% endif %}">
           <td style="text-align:center;">
-            {% if s.registered_at %}
-              <small><strong>{{ s.registered_at }}</strong></small>
+            <strong>{{ s.scheduled_time }}</strong>
+          </td>
+          <td>
+            {% if s.status == 'Registrado' %}
+              <strong class="unit-code-badge">🚌 {{ s.unit_code or 'Unidad #' ~ s.unit_id }}</strong>
+            {% elif s.status == 'Multado' %}
+              <strong class="unit-code-badge text-danger">🚌 {{ s.unit_code or 'Sin registro' }}</strong>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td>{{ s.socio_name or '—' }}</td>
+          <td style="text-align:center;">
+            {% if s.status == 'Registrado' %}
+              <span class="pill green">✓ Registrado</span>
+            {% elif s.status == 'Multado' %}
+              <span class="pill red" title="Multa por atraso registrada">⚒ Multado</span>
+            {% elif s.status == 'Expirado' %}
+              <span class="pill orange">✕ Expirado</span>
+            {% else %}
+              <span class="pill gray">⏳ En espera</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if s.status == 'Registrado' and s.photo_path %}
+              <a href="javascript:void(0)" onclick="openPhotoModal('/llegadas/foto/{{ s.id }}', '{{ s.scheduled_time }}', '{{ s.unit_code }}', '{{ s.socio_name }}', '{{ s.registered_at }}')" class="photo-thumb-link" title="Ver foto ampliada">
+                <img src="/llegadas/foto/{{ s.id }}" alt="Foto bus turno {{ s.scheduled_time }}" class="bus-photo-thumb" loading="lazy">
+                <span class="thumb-zoom-icon">🔍 Ver foto</span>
+              </a>
+            {% else %}
+              <span class="muted">Sin foto</span>
+            {% endif %}
+          </td>
+          <td style="text-align:center;">
+            {% if s.registered_at_display %}
+              <small><strong>{{ s.registered_at_display }}</strong></small>
               {% if s.registered_by_name %}
               <br><small class="muted">Por: {{ s.registered_by_name }}</small>
               {% endif %}
@@ -369,8 +405,15 @@ function openPhotoModal(src, time, unit, socio, regAt) {
   var modal = document.getElementById('photo-modal');
   var img = document.getElementById('modal-photo-img');
   var info = document.getElementById('modal-photo-info');
+  var registeredAt = '';
+  if (regAt) {
+    var utcTimestamp = Date.parse(regAt.replace(' ', 'T') + 'Z');
+    registeredAt = isNaN(utcTimestamp)
+      ? regAt
+      : new Date(utcTimestamp - 5 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+  }
   img.src = src;
-  info.innerHTML = '<strong>Turno: ' + time + '</strong> · Unidad: <strong>' + (unit || 'Sin asignar') + '</strong> · Socio: ' + (socio || 'N/A') + '<br><small class="muted">Registrado: ' + (regAt || '') + '</small>';
+  info.innerHTML = '<strong>Turno: ' + time + '</strong> · Unidad: <strong>' + (unit || 'Sin asignar') + '</strong> · Socio: ' + (socio || 'N/A') + '<br><small class="muted">Registrado (Hora Ecuador): ' + registeredAt + '</small>';
   modal.style.display = 'flex';
 }
 function closePhotoModal() {
@@ -413,6 +456,7 @@ document.querySelectorAll('.slot-unit-select').forEach(function(sel) {
 
   var clockEl = document.getElementById('live-digital-clock');
   var topDisplayEl = document.getElementById('top-timer-countdown-col');
+  var operationalSlotReloadPending = false;
 
   // Hora Oficial Ecuador (Guayaquil) UTC-5 exacta calibrada
   function getEcuadorNow() {
@@ -520,6 +564,10 @@ document.querySelectorAll('.slot-unit-select').forEach(function(sel) {
         if (submitBtn) {
           submitBtn.disabled = true;
           submitBtn.title = 'El tiempo límite de 2 minutos para este turno ha expirado';
+        }
+        if (row.getAttribute('data-operational') === 'true' && !operationalSlotReloadPending) {
+          operationalSlotReloadPending = true;
+          setTimeout(function() { window.location.reload(); }, 5500);
         }
       }
       // 3. NI ANTES (aún no llega la hora: todo deshabilitado)

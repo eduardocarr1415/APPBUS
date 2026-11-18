@@ -72,6 +72,7 @@ small {
 
 .shell {
     display: flex;
+    width: 100%;
     min-height: 100vh
 }
 
@@ -225,7 +226,7 @@ small {
     align-items: center;
     gap: 20px;
     padding: 0 26px;
-    background: #ffffffdd;
+    background: #fff;
     border-bottom: 1px solid #dbe5f4;
     position: sticky;
     top: 0;
@@ -1862,6 +1863,18 @@ td:nth-child(1) {
 .asistencia-table td {
     padding: 12px 10px;
     vertical-align: middle
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .asistencia-check {
