@@ -3396,3 +3396,73 @@ body {
         gap: 14px;
     }
 }
+
+.timer-tz-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    width: fit-content;
+}
+
+.timer-tz-tag .flag-icon {
+    font-size: 13px;
+}
+
+.quick-unit-filter {
+    height: 28px;
+    font-size: 12px;
+    padding: 3px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    width: 100%;
+    margin-bottom: 4px;
+    box-sizing: border-box;
+    background: #f8fafc;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.quick-unit-filter:focus {
+    border-color: #2563eb;
+    background: #ffffff;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.waiting-countdown-badge {
+    background: #eff6ff;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+    font-size: 15px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    margin: 6px 0;
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.pulse-text {
+    animation: pulse-countdown 0.9s infinite alternate;
+}
+
+.row-expired {
+    opacity: 0.75;
+}
+
+.row-expired:hover {
+    opacity: 1;
+}
+
+.slot-live-timer-tag {
+    font-size: 11px;
+    font-weight: 700;
+    display: block;
+    margin-top: 3px;
+}

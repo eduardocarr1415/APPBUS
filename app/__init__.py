@@ -4,7 +4,9 @@ import os
 import secrets
 import re
 import sqlite3
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, timezone
+
+ECUADOR_TZ = timezone(timedelta(hours=-5))
 from html import escape
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -1282,8 +1284,9 @@ def create_app(db_path=None, testing=False):
     @app.get('/llegadas')
     def llegadas_page(request: Request, day: str = ''):
         permitted(request, 'llegadas.ver')
-        today = date.today()
-        today_str = today.isoformat()
+        now_ec = datetime.now(ECUADOR_TZ)
+        today_ec = now_ec.date()
+        today_str = today_ec.isoformat()
 
         target_day = day.strip() if day else today_str
         try:
@@ -1291,7 +1294,7 @@ def create_app(db_path=None, testing=False):
             target_day = target_date.isoformat()
         except ValueError:
             target_day = today_str
-            target_date = today
+            target_date = today_ec
 
         prev_day = (target_date - timedelta(days=1)).isoformat()
         next_day = (target_date + timedelta(days=1)).isoformat()
@@ -1320,8 +1323,8 @@ def create_app(db_path=None, testing=False):
             """).fetchall()
             active_units = [dict(r) for r in units_rows]
 
-        now = datetime.now()
-        current_time_str = now.strftime('%H:%M:%S')
+        current_time_str = now_ec.strftime('%H:%M:%S')
+        server_timestamp = int(now_ec.timestamp())
 
         active_slot = None
         next_slot = None
@@ -1330,18 +1333,22 @@ def create_app(db_path=None, testing=False):
         for s in slots:
             try:
                 sh, sm = map(int, s['scheduled_time'].split(':'))
-                slot_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=sh, minute=sm)
+                slot_dt = datetime.combine(target_date, datetime.min.time(), tzinfo=ECUADOR_TZ).replace(hour=sh, minute=sm)
                 limit_dt = slot_dt + timedelta(minutes=2)
                 s['scheduled_time_limit'] = limit_dt.strftime('%H:%M:%S')
+                s['slot_start_secs'] = sh * 3600 + sm * 60
+                s['slot_end_secs'] = s['slot_start_secs'] + 120
 
                 if is_today:
-                    if slot_dt <= now <= limit_dt:
+                    if slot_dt <= now_ec <= limit_dt:
                         active_slot = s
-                        seconds_left = max(0, int((limit_dt - now).total_seconds()))
-                    elif now < slot_dt and next_slot is None:
+                        seconds_left = max(0, int((limit_dt - now_ec).total_seconds()))
+                    elif now_ec < slot_dt and next_slot is None:
                         next_slot = s
             except Exception:
                 s['scheduled_time_limit'] = s['scheduled_time']
+                s['slot_start_secs'] = 0
+                s['slot_end_secs'] = 0
 
         stats = {
             'total': len(slots),
@@ -1365,6 +1372,7 @@ def create_app(db_path=None, testing=False):
                       today_str=today_str,
                       is_today=is_today,
                       current_time_str=current_time_str,
+                      server_timestamp=server_timestamp,
                       active_slot=active_slot,
                       next_slot=next_slot,
                       seconds_left=seconds_left,
@@ -1426,21 +1434,22 @@ def create_app(db_path=None, testing=False):
             if not unit_row:
                 raise HTTPException(400, 'Unidad no válida.')
 
-            now = datetime.now()
-            today_str = date.today().isoformat()
+            now_ec = datetime.now(ECUADOR_TZ)
+            today_str = now_ec.date().isoformat()
             try:
                 sh, sm = map(int, slot['scheduled_time'].split(':'))
                 slot_date = date.fromisoformat(slot['day'])
-                slot_dt = datetime.combine(slot_date, datetime.min.time()).replace(hour=sh, minute=sm)
+                slot_dt = datetime.combine(slot_date, datetime.min.time(), tzinfo=ECUADOR_TZ).replace(hour=sh, minute=sm)
                 limit_dt = slot_dt + timedelta(minutes=2)
 
                 if not is_admin:
                     if slot['day'] != today_str:
-                        raise HTTPException(400, 'Solo se pueden registrar llegadas en la fecha actual.')
-                    if now < slot_dt:
-                        raise HTTPException(400, f'El turno de las {slot["scheduled_time"]} aún no ha iniciado.')
-                    if now > limit_dt:
-                        raise HTTPException(400, f'El tiempo límite de 2 minutos para el turno {slot["scheduled_time"]} ha expirado. Ya no se permite subir la foto.')
+                        raise HTTPException(400, f'Solo se pueden registrar llegadas en la fecha actual ({today_str} Hora Ecuador).')
+                    # Grace period of 5s for network transmission
+                    if now_ec < slot_dt - timedelta(seconds=5):
+                        raise HTTPException(400, f'El turno de las {slot["scheduled_time"]} aún no ha iniciado (Hora actual Ecuador: {now_ec.strftime("%H:%M:%S")}).')
+                    if now_ec > limit_dt + timedelta(seconds=5):
+                        raise HTTPException(400, f'El tiempo límite de 2 minutos para el turno {slot["scheduled_time"]} ha expirado a las {limit_dt.strftime("%H:%M:%S")} (Hora actual Ecuador: {now_ec.strftime("%H:%M:%S")}). Ya no se permite subir la foto.')
             except ValueError as ve:
                 raise HTTPException(400, str(ve))
 

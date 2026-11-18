@@ -3,7 +3,7 @@ import re
 import json
 import sqlite3
 from html import unescape
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -1531,7 +1531,7 @@ def test_llegadas_2_minute_rule_and_config(environment):
     png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
     files = {'foto': ('bus_03.png', png_data, 'image/png')}
 
-    now = datetime.now()
+    now = datetime.now(timezone(timedelta(hours=-5)))
     if now.hour > 8 or (now.hour == 8 and now.minute > 2):
         fail_time = c.post('/llegadas/registrar', data={'_csrf': vig_token, 'slot_id': slot_08['id'], 'unit_id': uid_unit, 'day': today_str}, files=files)
         assert fail_time.status_code == 400
