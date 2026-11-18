@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+import app as app_module
 from app import create_app
 from app.security import password_hash, money
 from app.db import Database
@@ -38,6 +39,15 @@ def login(client,name='admin'):
     resp=client.post('/login',data={'username':name,'password':'SecurePass123456','_csrf':token},follow_redirects=True)
     assert resp.status_code==200
     assert '<h1>Dashboard' in resp.text
+
+def freeze_app_clock(monkeypatch, hour, minute):
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current_date = date.today()
+            return cls(current_date.year, current_date.month, current_date.day, hour, minute, tzinfo=tz)
+
+    monkeypatch.setattr(app_module, 'datetime', FrozenDateTime)
 
 def post(client,path,form={},follow_redirects=False):
     # /perfil contains a hidden CSRF after authenticated login.
@@ -1394,8 +1404,9 @@ def test_llegadas_access_and_permissions(environment):
     assert res_sec.status_code == 200
     assert 'Llegada de buses' in res_sec.text
 
-def test_llegadas_slots_generation_and_upload(environment):
+def test_llegadas_slots_generation_and_upload(environment, monkeypatch):
     app, db, c, sid, other, aid, vid, sid_user = environment
+    freeze_app_clock(monkeypatch, 8, 1)
     with db.connection() as con:
         vid_veh = con.execute("INSERT INTO vehicles(plate,brand,model,year) VALUES(?,?,?,?)", ('PBC-1234', 'Hino', 'AK', 2022)).lastrowid
         uid_unit = con.execute("INSERT INTO units(code,socio_id,vehicle_id,status) VALUES(?,?,?,?)", ('01', sid, vid_veh, 'Activa')).lastrowid
@@ -1432,6 +1443,14 @@ def test_llegadas_slots_generation_and_upload(environment):
         updated_slot = con.execute("SELECT * FROM bus_arrival_slots WHERE id=?", (target_slot['id'],)).fetchone()
         assert updated_slot['status'] == 'Registrado'
         assert updated_slot['photo_path'] is not None
+        assert updated_slot['registered_at'] is not None
+        con.execute("UPDATE bus_arrival_slots SET registered_at=? WHERE id=?",
+                    ('2026-11-18 14:37:09', target_slot['id']))
+
+    arrivals_page = c.get(f'/llegadas?day={today_str}')
+    assert '2026-11-18 09:37:09' in arrivals_page.text
+    assert "'2026-11-18 14:37:09')" in arrivals_page.text
+    assert "Date.parse(regAt.replace(' ', 'T') + 'Z')" in arrivals_page.text
 
     foto_res = c.get(f'/llegadas/foto/{target_slot["id"]}')
     assert foto_res.status_code == 200
@@ -1536,3 +1555,60 @@ def test_llegadas_2_minute_rule_and_config(environment):
         fail_time = c.post('/llegadas/registrar', data={'_csrf': vig_token, 'slot_id': slot_08['id'], 'unit_id': uid_unit, 'day': today_str}, files=files)
         assert fail_time.status_code == 400
         assert 'ha expirado' in fail_time.text
+
+def test_llegadas_admin_cannot_register_after_two_minutes(environment, monkeypatch):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    freeze_app_clock(monkeypatch, 8, 3)
+
+    with db.connection() as con:
+        vid_veh = con.execute("INSERT INTO vehicles(plate,brand,model,year) VALUES(?,?,?,?)",
+                              ('PBC-7777', 'Hino', 'AK', 2022)).lastrowid
+        uid_unit = con.execute("INSERT INTO units(code,socio_id,vehicle_id,status) VALUES(?,?,?,?)",
+                               ('04', sid, vid_veh, 'Activa')).lastrowid
+
+    login(c, 'admin')
+    today_str = date.today().isoformat()
+    arrivals_page = c.get(f'/llegadas?day={today_str}')
+    timer_card = re.search(r'<section\b[^>]*id="llegadas-live-timer".*?</section>', arrivals_page.text, re.S).group(0)
+    assert len(re.findall(r'<div\b', timer_card)) == len(re.findall(r'</div\s*>', timer_card))
+    assert arrivals_page.text.count('class="llegada-row') == 1
+    assert 'id="tabla-historial-llegadas" data-client-list' in arrivals_page.text
+    assert 'Registro total de turnos' in arrivals_page.text
+    history_table = re.search(
+        r'<table\b[^>]*id="tabla-historial-llegadas".*?</table>',
+        arrivals_page.text,
+        re.S
+    ).group(0)
+    assert 'action="/llegadas/registrar"' not in history_table
+    assert arrivals_page.text.count('action="/llegadas/registrar"') == 1
+    slot = db.one("SELECT id FROM bus_arrival_slots WHERE day=? AND scheduled_time='08:00'", (today_str,))
+    token = csrf(c, '/perfil')
+    png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+
+    response = c.post('/llegadas/registrar',
+                      data={'_csrf': token, 'slot_id': slot['id'], 'unit_id': uid_unit, 'day': today_str},
+                      files={'foto': ('bus.png', png_data, 'image/png')})
+
+    assert response.status_code == 400
+    assert 'ha expirado' in response.text
+    assert db.one("SELECT status FROM bus_arrival_slots WHERE id=?", (slot['id'],))['status'] == 'Expirado'
+
+def test_llegadas_past_pending_slots_are_expired(environment, monkeypatch):
+    app, db, c, sid, other, aid, vid, sid_user = environment
+    freeze_app_clock(monkeypatch, 10, 0)
+    login(c, 'admin')
+    past_day = (date.today() - timedelta(days=1)).isoformat()
+
+    response = c.get(f'/llegadas?day={past_day}')
+
+    assert response.status_code == 200
+    assert 'No hay un turno activo en esta fecha pasada.' in response.text
+    with db.connection() as con:
+        statuses = con.execute(
+            "SELECT s.status, COUNT(*) AS count FROM bus_arrival_slots s "
+            "JOIN bus_arrival_days d ON s.day_id = d.id WHERE d.day = ? GROUP BY s.status",
+            (past_day,)
+        ).fetchall()
+    assert statuses
+    assert {row['status'] for row in statuses} == {'Expirado'}
+    assert 'Registro total de turnos' in response.text

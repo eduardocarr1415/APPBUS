@@ -1313,6 +1313,37 @@ def create_app(db_path=None, testing=False):
                 ORDER BY s.scheduled_time ASC
             """, (day_info['id'],)).fetchall()
             slots = [dict(r) for r in slots_rows]
+            expired_slots = []
+            for slot in slots:
+                if slot['status'] != 'Pendiente':
+                    continue
+                if target_date < today_ec:
+                    expired_slots.append(slot)
+                    continue
+                if target_date == today_ec:
+                    sh, sm = map(int, slot['scheduled_time'].split(':'))
+                    slot_dt = datetime.combine(
+                        target_date,
+                        datetime.min.time(),
+                        tzinfo=ECUADOR_TZ
+                    ).replace(hour=sh, minute=sm)
+                    if now_ec > slot_dt + timedelta(minutes=2, seconds=5):
+                        expired_slots.append(slot)
+
+            if expired_slots:
+                con.executemany(
+                    "UPDATE bus_arrival_slots SET status = 'Expirado' WHERE id = ? AND status = 'Pendiente'",
+                    [(slot['id'],) for slot in expired_slots]
+                )
+                for slot in expired_slots:
+                    slot['status'] = 'Expirado'
+
+            for slot in slots:
+                if slot['registered_at']:
+                    registered_at = datetime.fromisoformat(slot['registered_at'])
+                    if registered_at.tzinfo is None:
+                        registered_at = registered_at.replace(tzinfo=timezone.utc)
+                    slot['registered_at_display'] = registered_at.astimezone(ECUADOR_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
             units_rows = con.execute("""
                 SELECT u.id, u.code, sc.id AS socio_id, sc.name AS socio_name
@@ -1343,12 +1374,16 @@ def create_app(db_path=None, testing=False):
                     if slot_dt <= now_ec <= limit_dt:
                         active_slot = s
                         seconds_left = max(0, int((limit_dt - now_ec).total_seconds()))
-                    elif now_ec < slot_dt and next_slot is None:
+                    elif now_ec < slot_dt and next_slot is None and s['status'] == 'Pendiente':
                         next_slot = s
             except Exception:
                 s['scheduled_time_limit'] = s['scheduled_time']
                 s['slot_start_secs'] = 0
                 s['slot_end_secs'] = 0
+
+        operational_slot = active_slot if active_slot and active_slot['status'] == 'Pendiente' else next_slot
+        if operational_slot is None and active_slot and active_slot['status'] == 'Registrado':
+            operational_slot = active_slot
 
         stats = {
             'total': len(slots),
@@ -1394,6 +1429,7 @@ def create_app(db_path=None, testing=False):
                       server_timestamp=server_timestamp,
                       active_slot=active_slot,
                       next_slot=next_slot,
+                      operational_slot=operational_slot,
                       seconds_left=seconds_left,
                       stats=stats,
                       can_edit=has(request, 'llegadas.editar'),
@@ -1407,7 +1443,6 @@ def create_app(db_path=None, testing=False):
         ip = client_ip(request)
         user = current(request)
         uid = user['id']
-        is_admin = (user['role'] == 'Administrador')
 
         slot_id = f.get('slot_id')
         unit_id = f.get('unit_id')
@@ -1461,14 +1496,13 @@ def create_app(db_path=None, testing=False):
                 slot_dt = datetime.combine(slot_date, datetime.min.time(), tzinfo=ECUADOR_TZ).replace(hour=sh, minute=sm)
                 limit_dt = slot_dt + timedelta(minutes=2)
 
-                if not is_admin:
-                    if slot['day'] != today_str:
-                        raise HTTPException(400, f'Solo se pueden registrar llegadas en la fecha actual ({today_str} Hora Ecuador).')
-                    # Grace period of 5s for network transmission
-                    if now_ec < slot_dt - timedelta(seconds=5):
-                        raise HTTPException(400, f'El turno de las {slot["scheduled_time"]} aún no ha iniciado (Hora actual Ecuador: {now_ec.strftime("%H:%M:%S")}).')
-                    if now_ec > limit_dt + timedelta(seconds=5):
-                        raise HTTPException(400, f'El tiempo límite de 2 minutos para el turno {slot["scheduled_time"]} ha expirado a las {limit_dt.strftime("%H:%M:%S")} (Hora actual Ecuador: {now_ec.strftime("%H:%M:%S")}). Ya no se permite subir la foto.')
+                if slot['day'] != today_str:
+                    raise HTTPException(400, f'Solo se pueden registrar llegadas en la fecha actual ({today_str} Hora Ecuador).')
+                # Grace period of 5s for network transmission
+                if now_ec < slot_dt - timedelta(seconds=5):
+                    raise HTTPException(400, f'El turno de las {slot["scheduled_time"]} aún no ha iniciado (Hora actual Ecuador: {now_ec.strftime("%H:%M:%S")}).')
+                if now_ec > limit_dt + timedelta(seconds=5):
+                    raise HTTPException(400, f'El tiempo límite de 2 minutos para el turno {slot["scheduled_time"]} ha expirado a las {limit_dt.strftime("%H:%M:%S")} (Hora actual Ecuador: {now_ec.strftime("%H:%M:%S")}). Ya no se permite subir la foto.')
             except ValueError as ve:
                 raise HTTPException(400, str(ve))
 
