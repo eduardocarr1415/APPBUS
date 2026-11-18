@@ -1394,12 +1394,31 @@ def create_app(db_path=None, testing=False):
         }
 
         user_role = current(request)['role'] if current(request) else ''
+        is_admin = (user_role == 'Administrador')
+
+        slots_json = json.dumps([
+            {
+                'id': s['id'],
+                'time': s['scheduled_time'],
+                'status': s['status'],
+                'unit_id': s.get('unit_id'),
+                'unit_code': s.get('unit_code'),
+                'socio_name': s.get('socio_name'),
+                'start_secs': s.get('slot_start_secs', 0),
+                'end_secs': s.get('slot_end_secs', 0),
+                'photo_path': s.get('photo_path'),
+                'registered_at': s.get('registered_at'),
+                'registered_by_name': s.get('registered_by_name')
+            } for s in slots
+        ], ensure_ascii=False)
+
         return render(request, 'llegadas.html',
                       active='llegadas',
                       title=TITLES.get('llegadas', 'Llegada de buses'),
                       subtitle=SUBTITLES.get('llegadas', 'Control operativo y registro fotográfico de llegada de unidades por turnos.'),
                       day_info=day_info,
                       slots=slots,
+                      slots_json=slots_json,
                       active_units=active_units,
                       current_day=target_day,
                       prev_day=prev_day,
@@ -1415,7 +1434,7 @@ def create_app(db_path=None, testing=False):
                       stats=stats,
                       can_edit=has(request, 'llegadas.editar'),
                       can_finalize=has(request, 'llegadas.finalizar'),
-                      is_admin=(user_role == 'Administrador'))
+                      is_admin=is_admin)
 
     @app.post('/llegadas/registrar')
     async def llegadas_registrar(request: Request):
