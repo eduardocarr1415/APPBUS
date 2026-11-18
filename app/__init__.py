@@ -1562,6 +1562,8 @@ def create_app(db_path=None, testing=False):
 
         if not day:
             raise HTTPException(400, 'Debe especificar el día a finalizar.')
+        if day != datetime.now(ECUADOR_TZ).date().isoformat():
+            raise HTTPException(400, 'Solo se puede finalizar el control del día actual.')
 
         with db.connection() as con:
             day_row = con.execute("SELECT * FROM bus_arrival_days WHERE day=?", (day,)).fetchone()

@@ -11,7 +11,7 @@ NAV = [
  ('finanzas','/finanzas','▥','Finanzas','finanzas.ver'),
  ('multas','/multas','⚒','Multas','multas.ver'),
  ('unidades','/unidades','▣','Unidades y vehículos','unidades.ver'),
- ('llegadas','/llegadas','🚏','Llegada de buses','llegadas.ver'),
+ ('llegadas','/llegadas','⌖','Llegada de buses','llegadas.ver'),
  ('reportes','/reportes','▥','Reportes','reportes.ver'),
  ('usuarios','/usuarios','♙','Usuarios y permisos','usuarios.ver'),
  ('auditoria','/auditoria','⏱','Historial del sistema','auditoria.ver'),

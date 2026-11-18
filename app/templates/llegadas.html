@@ -3,7 +3,7 @@
 {% block content %}
 <div class="heading-row">
   <div>
-    <h1>🚏 {{ title }}</h1>
+    <h1>▣ {{ title }}</h1>
     <p>{{ subtitle }}</p>
   </div>
   <div class="header-actions">
@@ -14,7 +14,11 @@
     <form action="/llegadas/finalizar" method="post" style="display:inline-block;" id="form-finalizar-dia">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
       <input type="hidden" name="day" value="{{ current_day }}">
-      <button type="submit" class="btn danger" data-confirm="¿Está seguro de FINALIZAR el control del día {{ current_day }}? Todos los turnos sin foto registrada recibirán automáticamente una multa por atraso al socio responsable.">🏁 Finalizar día</button>
+      {% if is_today %}
+      <button type="submit" class="btn danger" data-confirm="¿Está seguro de FINALIZAR el control del día {{ current_day }}? Todos los turnos expirados recibirán automáticamente una multa por atraso al socio responsable.">✓ Finalizar día</button>
+      {% else %}
+      <button type="button" class="btn danger" disabled title="Solo se puede finalizar el día actual.">✓ Finalizar día</button>
+      {% endif %}
     </form>
     {% elif day_info.status == 'Finalizado' %}
     <span class="pill green" style="font-size:14px;padding:8px 14px;">✓ Día Finalizado (Cerrado)</span>
@@ -34,7 +38,7 @@
     <a href="/llegadas?day={{ today_str }}" class="btn {% if current_day == today_str %}primary{% else %}secondary{% endif %} small" title="Ir a la fecha de hoy">Hoy</a>
   </div>
   <div class="llegadas-status-badge">
-    <span class="llegadas-point-tag">📍 {{ day_info.control_point }}</span>
+    <span class="llegadas-point-tag">⌖ {{ day_info.control_point }}</span>
     <span class="pill {% if day_info.status == 'Abierto' %}blue{% else %}green{% endif %}">
       Estado: <strong>{{ day_info.status }}</strong>
     </span>
@@ -47,28 +51,28 @@
 <!-- Tarjetas de Métricas -->
 <div class="metrics">
   <article class="metric">
-    <span class="metric-icon blue">🚏</span>
+    <span class="metric-icon blue">▣</span>
     <div>
       <span class="metric-label">Total Turnos</span>
       <strong id="metric-total">{{ stats.total }}</strong>
     </div>
   </article>
   <article class="metric">
-    <span class="metric-icon green">📷</span>
+    <span class="metric-icon green">◉</span>
     <div>
       <span class="metric-label">Registrados con Foto</span>
       <strong id="metric-registrados">{{ stats.registrados }}</strong>
     </div>
   </article>
   <article class="metric">
-    <span class="metric-icon orange">⏱</span>
+    <span class="metric-icon orange">◷</span>
     <div>
       <span class="metric-label">Pendientes</span>
       <strong id="metric-pendientes">{{ stats.pendientes }}</strong>
     </div>
   </article>
   <article class="metric">
-    <span class="metric-icon red">⚒</span>
+    <span class="metric-icon red">!</span>
     <div>
       <span class="metric-label">Atrasos / Multados</span>
       <strong id="metric-multados">{{ stats.multados + stats.expirados }}</strong>
@@ -94,15 +98,15 @@
   <div class="station-header-bar">
     <div class="station-clock-group">
       <div class="timer-tz-tag">
-        <span class="flag-icon">🇪🇨</span>
+        <span class="station-location-icon" aria-hidden="true">⌖</span>
         <span>Hora Oficial Ecuador (Guayaquil)</span>
       </div>
       <div class="digital-clock" id="live-digital-clock">{{ current_time_str }}</div>
     </div>
     <div class="station-meta-info">
-      <div class="station-meta-badge">📍 <strong>{{ day_info.control_point }}</strong></div>
-      <div class="station-meta-badge">⏱ Intervalo: <strong>cada {{ day_info.interval_minutes }} min</strong></div>
-      <div class="station-meta-badge">🔒 Ventana de registro: <strong>2 minutos exactos</strong></div>
+      <div class="station-meta-badge">⌖ <strong>{{ day_info.control_point }}</strong></div>
+      <div class="station-meta-badge">◷ Intervalo: <strong>cada {{ day_info.interval_minutes }} min</strong></div>
+      <div class="station-meta-badge">▣ Ventana de registro: <strong>2 minutos exactos</strong></div>
     </div>
   </div>
 
@@ -112,7 +116,7 @@
     <!-- 1. CASO DÍA FINALIZADO -->
     {% if day_info.status == 'Finalizado' %}
     <div class="station-card-closed" id="station-closed-banner">
-      <div style="font-size:36px;line-height:1;">🏁</div>
+      <div style="font-size:36px;line-height:1;">✓</div>
       <div>
         <h3>Control finalizado para la fecha: {{ current_day }}</h3>
         <p>El día ha sido cerrado. Todos los turnos sin evidencia fotográfica han recibido su respectiva multa por atraso.</p>
@@ -125,7 +129,7 @@
     <!-- 2. CASO FECHA HISTÓRICA O FUTURA -->
     {% elif not is_today %}
     <div class="station-card-info" id="station-historic-banner">
-      <div style="font-size:32px;line-height:1;">📅</div>
+      <div style="font-size:32px;line-height:1;">▦</div>
       <div>
         <strong>Consulta de fecha {{ 'anterior' if current_day < today_str else 'futura' }} ({{ current_day }})</strong>
         <p style="margin:4px 0 0 0;" class="muted">
@@ -160,7 +164,7 @@
         </div>
 
         <div class="active-instruction-text" id="active-instruction-text">
-          ⚠️ <strong>En curso:</strong> Quedan <span id="active-countdown-text">2 minutos</span> para registrar la llegada. Seleccione qué unidad llegó al punto y suba la foto. Al llegar a 00:00 se bloqueará la subida automáticamente.
+          <strong>! En curso:</strong> Quedan <span id="active-countdown-text">2 minutos</span> para registrar la llegada. Seleccione qué unidad llegó al punto y suba la foto. Al llegar a 00:00 se bloqueará la subida automáticamente.
         </div>
 
         {% if can_edit %}
@@ -173,7 +177,7 @@
           <div class="active-form-grid">
             <!-- Selector de Unidad con flecha -->
             <div class="station-field-group">
-              <label for="active-unit-picker"><strong>🚌 Seleccionar Unidad que llegó:</strong></label>
+              <label for="active-unit-picker"><strong>▣ Seleccionar Unidad que llegó:</strong></label>
               <select id="active-unit-picker" name="unit_id" class="station-select" required aria-label="Seleccionar unidad que llegó">
                 <option value="" disabled selected>-- Seleccionar unidad ▼ --</option>
                 {% for u in active_units %}
@@ -186,7 +190,7 @@
 
             <!-- Socio / Responsable -->
             <div class="station-field-group">
-              <label><strong>👤 Socio / Responsable:</strong></label>
+              <label><strong>♙ Socio / Responsable:</strong></label>
               <div class="station-socio-card" id="active-socio-card">
                 <span class="muted">Seleccione una unidad en la flecha...</span>
               </div>
@@ -194,7 +198,7 @@
 
             <!-- Evidencia Fotográfica -->
             <div class="station-field-group">
-              <label for="active-foto-file"><strong>📸 Fotografía de evidencia del bus:</strong></label>
+              <label for="active-foto-file"><strong>◉ Fotografía de evidencia del bus:</strong></label>
               <input type="file" id="active-foto-file" name="foto" accept="image/png, image/jpeg, image/jpg, image/webp" capture="environment" class="station-file-input" required aria-label="Subir fotografía de evidencia del bus">
               <div id="active-foto-preview-box" class="foto-preview-box" style="display:none;">
                 <img id="active-foto-preview-img" src="" alt="Vista previa">
@@ -205,7 +209,7 @@
 
           <div class="active-form-footer">
             <button type="submit" class="btn primary btn-station-submit" id="active-btn-submit">
-              📷 Confirmar y Registrar Llegada
+              ◉ Confirmar y Registrar Llegada
             </button>
           </div>
         </form>
@@ -218,7 +222,7 @@
 
       <!-- Recuadro: EN ESPERA DEL PRÓXIMO TURNO (Se muestra cuando no hay turno activo) -->
       <div class="station-card-waiting" id="station-waiting-turn" style="{% if op and op.status == 'Pendiente' %}display:none;{% endif %}">
-        <div class="waiting-icon-box">⏳</div>
+        <div class="waiting-icon-box">◷</div>
         <div class="waiting-body">
           <h3 class="waiting-title">Próximo turno: <span id="waiting-next-time" class="highlight-time">{{ next_slot.scheduled_time if next_slot else '--:--' }}</span></h3>
           <p style="margin:0 0 6px 0;font-size:13px;color:#475569;">El sistema está en espera sincronizada con el cronómetro oficial de Ecuador.</p>
@@ -245,10 +249,10 @@
 
       <!-- Recuadro: TODOS LOS TURNOS HAN CONCLUIDO -->
       <div class="station-card-closed" id="station-all-finished" style="display:none;">
-        <div style="font-size:36px;line-height:1;">✅</div>
+        <div style="font-size:36px;line-height:1;">✓</div>
         <div>
           <h3>Todos los turnos programados del día han concluido</h3>
-          <p>Puede proceder a hacer clic en el botón superior <strong>"🏁 Finalizar día"</strong> para que las unidades sin foto reciban automáticamente la multa por atraso.</p>
+          <p>Al finalizar el día actual, puede hacer clic en el botón superior <strong>"✓ Finalizar día"</strong> para que los turnos expirados reciban automáticamente la multa por atraso.</p>
         </div>
       </div>
 
@@ -262,7 +266,7 @@
 <section class="panel llegadas-table-section" id="tabla-historial-llegadas-wrapper">
   <div class="llegadas-table-header">
     <div>
-      <h2 style="margin:0;font-size:17px;font-weight:700;">📋 Turnos de control del día: Registro total de turnos ({{ current_day }})</h2>
+      <h2 style="margin:0;font-size:17px;font-weight:700;">▤ Turnos de control del día: Registro total de turnos ({{ current_day }})</h2>
       <p style="margin:2px 0 0 0;font-size:12px;color:#64748b;">
         Punto: <strong>{{ day_info.control_point }}</strong> · Intervalo: {{ day_info.interval_minutes }} min · Horario: {{ day_info.start_time }} a {{ day_info.end_time }}
       </p>
@@ -272,9 +276,9 @@
     <div class="llegadas-filter-bar">
       <button type="button" class="filter-btn active" data-filter="all">Todos ({{ stats.total }})</button>
       <button type="button" class="filter-btn" data-filter="Registrado">✓ Registrados ({{ stats.registrados }})</button>
-      <button type="button" class="filter-btn" data-filter="Pendiente">⏳ Pendientes ({{ stats.pendientes }})</button>
-      <button type="button" class="filter-btn" data-filter="fined">✕ Sin Foto / Multados ({{ stats.multados + stats.expirados }})</button>
-      <input type="text" id="slot-table-search" class="table-search-input" placeholder="🔍 Filtrar hora o unidad..." aria-label="Filtrar turnos">
+      <button type="button" class="filter-btn" data-filter="Pendiente">◷ Pendientes ({{ stats.pendientes }})</button>
+      <button type="button" class="filter-btn" data-filter="fined">✕ Expirados / Multados ({{ stats.multados + stats.expirados }})</button>
+      <input type="text" id="slot-table-search" class="table-search-input" placeholder="⌕ Filtrar hora o unidad..." aria-label="Filtrar turnos">
     </div>
   </div>
 
@@ -311,18 +315,18 @@
             {% elif s.status == 'Multado' %}
               <span class="pill red slot-status-pill" title="Multa por atraso emitida">⚒ Multado</span>
             {% elif s.status == 'Expirado' %}
-              <span class="pill orange slot-status-pill">✕ Sin foto</span>
+              <span class="pill orange slot-status-pill">✕ Expirado</span>
             {% else %}
-              <span class="pill gray slot-status-pill" id="pill-row-{{ s.id }}">⏳ En espera</span>
+              <span class="pill gray slot-status-pill" id="pill-row-{{ s.id }}">◷ En espera</span>
             {% endif %}
           </td>
 
           <!-- Unidad -->
           <td>
             {% if s.unit_code %}
-              <strong class="unit-code-badge">🚌 {{ s.unit_code }}</strong>
+              <strong class="unit-code-badge">▣ {{ s.unit_code }}</strong>
             {% elif s.status == 'Registrado' %}
-              <strong class="unit-code-badge">🚌 Unidad #{{ s.unit_id }}</strong>
+              <strong class="unit-code-badge">▣ Unidad #{{ s.unit_id }}</strong>
             {% elif s.status == 'Multado' %}
               <span class="text-danger" style="font-weight:700;">Sin unidad</span>
             {% else %}
@@ -343,7 +347,7 @@
               <div class="photo-preview-box" style="justify-content:center;">
                 <a href="javascript:void(0)" onclick="openPhotoModal('/llegadas/foto/{{ s.id }}', '{{ s.scheduled_time }}', '{{ s.unit_code }}', '{{ s.socio_name }}', '{{ s.registered_at }}')" class="photo-thumb-link" title="Click para ver foto ampliada">
                   <img src="/llegadas/foto/{{ s.id }}" alt="Foto bus turno {{ s.scheduled_time }}" class="bus-photo-thumb" loading="lazy">
-                  <span class="thumb-zoom-icon">🔍 Ampliar</span>
+                  <span class="thumb-zoom-icon">⌕ Ampliar</span>
                 </a>
               </div>
             {% elif s.status == 'Multado' or s.status == 'Expirado' %}
@@ -521,7 +525,7 @@ if (activeUnitSelect && activeSocioCard) {
   activeUnitSelect.addEventListener('change', function() {
     var opt = this.options[this.selectedIndex];
     var socioName = opt.getAttribute('data-socio') || 'Sin socio asignado';
-    activeSocioCard.innerHTML = '<strong>👤 ' + socioName + '</strong>';
+    activeSocioCard.innerHTML = '<strong>♙ ' + socioName + '</strong>';
   });
 }
 
@@ -783,13 +787,13 @@ if (activeUnitSelect && activeSocioCard) {
       if (!pill) continue;
 
       if (curSecs > s.end_secs) {
-        // Expirado sin foto
+        // Turno expirado
         pill.className = 'pill orange slot-status-pill';
-        pill.textContent = '✕ Sin foto';
+        pill.textContent = '✕ Expirado';
       } else if (curSecs < s.start_secs) {
         // En espera
         pill.className = 'pill gray slot-status-pill';
-        pill.textContent = '⏳ En espera';
+        pill.textContent = '◷ En espera';
       }
     }
   }
