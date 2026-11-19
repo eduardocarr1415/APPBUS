@@ -7,11 +7,16 @@ INSTALACION EN EL PC
 1) Copie esta carpeta a una ubicacion con permiso de escritura,
    por ejemplo C:\BusGestion  o  Documentos\BusGestion.
    (NO la ponga en C:\Archivos de programa: alli no se puede guardar la base.)
-2) Doble clic en BusGestion.exe. Se abre una ventana negra y luego el navegador
-   en http://127.0.0.1:8000
+2) Doble clic en BusGestion.exe. El sistema arranca en segundo plano (sin ventana)
+   y se abre el navegador en http://127.0.0.1:8000
+   Si cierra la pestana, el sistema sigue encendido: vuelva a abrir BusGestion.exe
+   o entre a http://127.0.0.1:8000
 3) Usuario: admin   Contrasena inicial: Admin12345678!
    Cambiela en "Mi perfil" despues del primer ingreso.
-4) NO cierre la ventana negra mientras use el sistema. Cerrarla apaga el sistema.
+4) PARA APAGAR EL SISTEMA: ingrese como administrador y pulse el boton (⏻)
+   "Apagar sistema" en la barra superior, junto a "Cerrar sesion".
+   Alternativa: Administrador de tareas > BusGestion.exe > Finalizar tarea.
+5) Si el sistema no arranca, revise el archivo  instance\busgestion.log
 
 Si Windows muestra "Windows protegio su PC": clic en "Mas informacion" > "Ejecutar de todas formas".
 

@@ -24,7 +24,7 @@ exe = EXE(
     a.datas,
     [],
     name='BusGestion',
-    console=True,
+    console=False,
     upx=False,
     runtime_tmpdir=None,
 )

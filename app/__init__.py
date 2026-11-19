@@ -82,6 +82,8 @@ def create_app(db_path=None, testing=False):
                 nav_items.append({'key': k, 'url': url, 'icon': dyn_icon, 'title': dyn_title})
         return {'request': request, 'user': user, 'csrf': getattr(request.state, 'csrf', ''),
                 'nav': nav_items,
+                'can_shutdown': bool(getattr(app.state, 'shutdown', None) and user
+                                     and user.get('role') == 'Administrador'),
                 'active': more.get('active', ''), 'ok': request.query_params.get('ok', '')[:160],
                 'perms': getattr(request.state, 'perms', set()), 'year': date.today().year,
                 'period': db.current_period(), 'settings': curr_s, **more}
@@ -263,6 +265,24 @@ def create_app(db_path=None, testing=False):
             con.execute('DELETE FROM sessions WHERE token_hash=?',(request.state.sid_hash,))
         request.state.clear_cookie=True
         return redir('/login')
+
+    @app.post('/apagar')
+    async def shutdown_system(request:Request):
+        # Solo existe cuando corre como ejecutable (launcher define app.state.shutdown).
+        await csrf_check(request)
+        user=permitted(request)
+        stop=getattr(app.state,'shutdown',None)
+        if not stop: raise HTTPException(404,'Opción no disponible.')
+        if user.get('role')!='Administrador':
+            raise HTTPException(403,'Solo un administrador puede apagar el sistema.')
+        with db.connection() as con:
+            Database.audit(con,user['user_id'],'Apagar sistema','sistema',None,
+                           f"Sistema apagado por '{user['username']}'",ip=client_ip(request))
+        stop()
+        return HTMLResponse('<!doctype html><meta charset="utf-8"><title>Sistema apagado</title>'
+            '<body style="font-family:system-ui,sans-serif;text-align:center;padding:4rem">'
+            '<h1>Sistema apagado</h1><p>Ya puede cerrar esta pestaña.</p>'
+            '<p>Para volver a usarlo, abra <b>BusGestion.exe</b>.</p></body>')
 
     @app.get('/perfil')
     def profile(request:Request):

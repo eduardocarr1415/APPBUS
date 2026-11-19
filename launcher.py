@@ -18,10 +18,22 @@ import urllib.request
 import webbrowser
 
 
+NO_CONSOLE = sys.stdout is None  # exe compilado con console=False
+
+if NO_CONSOLE:
+    # Sin consola no hay stdout/stderr: se redirige todo a un log junto al exe.
+    _log_dir = os.path.join(os.path.dirname(sys.executable), 'instance')
+    os.makedirs(_log_dir, exist_ok=True)
+    sys.stdout = sys.stderr = open(os.path.join(_log_dir, 'busgestion.log'),
+                                   'a', encoding='utf-8', buffering=1)
+
+
 def pause():
+    if NO_CONSOLE:
+        return
     try:
         input('\nPresione ENTER para cerrar...')
-    except EOFError:
+    except (EOFError, RuntimeError):
         pass
 
 
@@ -77,11 +89,18 @@ def serve():
     print(f'Datos (base SQLite): {ROOT / "instance" / "buses.sqlite3"}')
     app = create_app()  # crea/actualiza la base y el administrador si no existe
     print(f'\nAbra en su navegador: {url}')
-    print('NO cierre esta ventana mientras use el sistema.')
-    print('Para apagar el sistema, cierre esta ventana o presione Ctrl+C.\n')
+    if NO_CONSOLE:
+        print('Para apagar: botón "Apagar sistema" (⏻) en la barra superior (administrador).\n')
+    else:
+        print('NO cierre esta ventana mientras use el sistema.')
+        print('Para apagar el sistema, cierre esta ventana o presione Ctrl+C.\n')
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level='warning',
+                                           reload=False, log_config=None))
+    # Pequeña espera para que la página de "Sistema apagado" llegue al navegador.
+    app.state.shutdown = lambda: threading.Timer(1.0, lambda: setattr(server, 'should_exit', True)).start()
     open_browser_when_ready(url)
-    uvicorn.run(app, host=host, port=port, log_level='warning', reload=False,
-                log_config=None)
+    server.run()
+    print(f'[{time.strftime("%Y-%m-%d %H:%M:%S")}] Sistema apagado.')
 
 
 def main():

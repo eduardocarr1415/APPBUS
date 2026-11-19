@@ -66,6 +66,13 @@
           <input type="hidden" name="_csrf" value="{{ csrf }}">
           <button title="Cerrar sesión" class="icon-button" type="submit">⇥</button>
         </form>
+        {% if can_shutdown %}
+        <form action="/apagar" method="post"
+              onsubmit="return confirm('¿Apagar el sistema? Todos los usuarios conectados perderán acceso hasta que se vuelva a abrir BusGestion.exe.')">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <button title="Apagar sistema" aria-label="Apagar sistema" class="icon-button" type="submit">⏻</button>
+        </form>
+        {% endif %}
       </div>
     </header>
 
